@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Academic portal collections
+    match /marksheets/{marksheetId} {
+      allow read, write: if true;
+    }
+
+    match /student_batches/{batchId} {
+      allow read, write: if true;
+    }
+
+    // Connection validation tests & system telemetry
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    match /system/{systemId} {
+      allow read, write: if true;
+    }
+
+    // Catch-all fallback
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}
+

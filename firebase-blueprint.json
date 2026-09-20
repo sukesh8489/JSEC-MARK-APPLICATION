@@ -1,0 +1,44 @@
+{
+  "entities": {
+    "marksheets": {
+      "title": "Marksheet",
+      "description": "Academic assessment marksheets with student records and metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "status": { "type": "string" },
+        "submittedAt": { "type": "string" },
+        "approvedAt": { "type": "string" },
+        "yearNumber": { "type": "number" },
+        "meta": { "type": "object" },
+        "students": { "type": "array" }
+      },
+      "required": ["id", "meta", "students", "status"]
+    },
+    "student_batches": {
+      "title": "Student Batch",
+      "description": "Department and Semester student rosters and configurations",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "department": { "type": "string" },
+        "semester": { "type": "string" },
+        "yearNumber": { "type": "number" },
+        "yearLabel": { "type": "string" },
+        "academicYear": { "type": "string" },
+        "students": { "type": "array" }
+      },
+      "required": ["id", "department", "semester", "yearNumber", "students"]
+    }
+  },
+  "firestore": {
+    "/marksheets/{marksheetId}": {
+      "schema": "marksheets",
+      "description": "Collection of submitted college marksheets"
+    },
+    "/student_batches/{batchId}": {
+      "schema": "student_batches",
+      "description": "Collection of department and year student batches"
+    }
+  }
+}
