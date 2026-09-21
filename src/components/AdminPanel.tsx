@@ -9,7 +9,7 @@ import {
   getYearFromSemester,
 } from '../utils/submittedSheets';
 import { exportMarksheetToPDF } from '../utils/pdfExport';
-import { DEPARTMENTS } from '../utils/studentBatches';
+import { DEPARTMENTS, getStoredDepartments } from '../utils/studentBatches';
 import {
   subscribeToLiveMarksheets,
   updateMarksheetLockInFirestore,
@@ -138,7 +138,7 @@ export default function AdminPanel({
   }, [latestSubmittedSheet]);
 
   // Available departments matching the updated institutional list
-  const departmentOptions = DEPARTMENTS;
+  const departmentOptions = useMemo(() => getStoredDepartments(), [sheets]);
 
   // Dynamic Year & Semester options according to selected Department
   const availableSemestersForDept = useMemo(() => {
@@ -896,7 +896,7 @@ export default function AdminPanel({
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 text-center text-xs">
                 <div>
                   <div className="w-40 h-0.5 bg-slate-300 mx-auto mb-1.5" />
-                  <p className="font-semibold text-slate-700">Evaluator Name & Signature</p>
+                  <p className="font-semibold text-slate-700">Evaluator Signature</p>
                   <p className="text-[11px] text-slate-500 font-medium">({activeSheet.meta.evaluatorName || 'Evaluator Signature'})</p>
                 </div>
                 <div>

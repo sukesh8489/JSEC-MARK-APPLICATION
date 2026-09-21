@@ -23,6 +23,8 @@ import {
   DEPARTMENTS,
   saveStoredBatches,
   getStoredBatches,
+  getStoredDepartments,
+  saveStoredDepartments,
 } from '../utils/studentBatches';
 
 const COLLECTION_NAME = 'marksheets';
@@ -487,26 +489,33 @@ export function subscribeToLiveBatches(
           return;
         }
 
-        const validDeptNames = new Set(DEPARTMENTS.map((d) => d.trim().toLowerCase()));
+        const validDeptList = getStoredDepartments();
+        const validDeptNames = new Set(validDeptList.map((d) => d.trim().toLowerCase()));
         const loaded: YearBatchConfig[] = [];
+        let deptsUpdated = false;
         snapshot.forEach((docSnap) => {
           const b = docSnap.data() as YearBatchConfig;
-          // Clean up deleted or obsolete departments (S&H, ECE, IT, etc.)
-          if (
-            !b.department ||
-            !validDeptNames.has(b.department.trim().toLowerCase()) ||
-            b.id?.startsWith('sh_') ||
-            b.id?.startsWith('ece_') ||
-            b.id?.startsWith('it_')
-          ) {
+          if (!b.department || !b.id) {
             deleteDoc(doc(db, BATCHES_COLLECTION, docSnap.id)).catch(() => {});
             return;
+          }
+          if (b.department && !validDeptNames.has(b.department.trim().toLowerCase())) {
+            validDeptList.push(b.department.trim());
+            validDeptNames.add(b.department.trim().toLowerCase());
+            deptsUpdated = true;
           }
           // Strip legacy subject fields from all year batches
           delete (b as any).defaultSubjectCode;
           delete (b as any).defaultSubjectName;
+          if (b.isQrActive === undefined) {
+            b.isQrActive = true;
+            b.qrStatus = 'ACTIVE';
+          }
           loaded.push(b);
         });
+        if (deptsUpdated) {
+          saveStoredDepartments(validDeptList);
+        }
 
         // Ensure all default batches for all departments are present
         const loadedIds = new Set(loaded.map((b) => b.id));
@@ -594,6 +603,36 @@ export async function saveBatchToFirestore(batch: YearBatchConfig): Promise<void
   } catch (err) {
     console.warn('Error saving batch to Firestore:', err);
     handleFirestoreError(err, OperationType.WRITE, `${BATCHES_COLLECTION}/${batch.id}`);
+  }
+}
+
+/**
+ * Toggle Activate / Deactivate option for Batch QR Code in live Firestore
+ */
+export async function updateBatchQrStatusInFirestore(
+  batchId: string,
+  isQrActive: boolean
+): Promise<void> {
+  try {
+    const docRef = doc(db, BATCHES_COLLECTION, batchId);
+    const now = new Date().toISOString();
+    await updateDoc(docRef, {
+      isQrActive,
+      qrStatus: isQrActive ? 'ACTIVE' : 'DEACTIVATED',
+      ...(isQrActive ? { qrActivatedAt: now } : { qrDeactivatedAt: now }),
+    });
+
+    broadcastLiveUpdate(
+      'BATCH_UPDATED',
+      isQrActive ? 'Batch QR Code Activated' : 'Batch QR Code Deactivated',
+      `QR Code for batch ${batchId} is now ${isQrActive ? 'ACTIVATED (Mark Entry Open)' : 'DEACTIVATED (Mark Entry Closed)'}`,
+      'Central Exam Cell Admin',
+      { batchId, isQrActive, qrStatus: isQrActive ? 'ACTIVE' : 'DEACTIVATED' }
+    ).catch(() => {});
+  } catch (err) {
+    console.warn('Error updating batch QR status in Firestore:', err);
+    handleFirestoreError(err, OperationType.UPDATE, `${BATCHES_COLLECTION}/${batchId}`);
+    throw err;
   }
 }
 

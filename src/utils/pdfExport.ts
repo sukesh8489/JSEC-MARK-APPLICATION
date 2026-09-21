@@ -125,9 +125,9 @@ export async function exportMarksheetToPDF(
     renderVectorHeaderFallback(doc, meta, pageWidth, margin);
   }
 
-  // 3. METADATA SUMMARY BOX (Status row removed as requested)
+  // 3. METADATA SUMMARY BOX (Including Department, Assessment Date, Semester, Faculty, Subject, Evaluator, Marks Matrix)
   const metaBoxY = 44;
-  const metaBoxHeight = 20;
+  const metaBoxHeight = 24.5;
   doc.setFillColor(248, 250, 252); // Slate-50
   doc.setDrawColor(203, 213, 225); // Slate-300
   doc.setLineWidth(0.2);
@@ -135,7 +135,7 @@ export async function exportMarksheetToPDF(
 
   const col1X = margin + 3;
   const col2X = margin + 98;
-  let currentY = metaBoxY + 5;
+  let currentY = metaBoxY + 4.8;
 
   doc.setFontSize(8);
 
@@ -155,7 +155,7 @@ export async function exportMarksheetToPDF(
   doc.text(meta.assessmentDate || new Date().toISOString().split('T')[0], col2X + 28, currentY);
 
   // Row 2
-  currentY += 4.8;
+  currentY += 4.5;
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.text('Semester:', col1X, currentY);
@@ -171,20 +171,38 @@ export async function exportMarksheetToPDF(
   doc.text(meta.facultyInCharge || 'Faculty In-Charge', col2X + 28, currentY);
 
   // Row 3
-  currentY += 4.8;
+  currentY += 4.5;
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
   doc.text('Subject:', col1X, currentY);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${meta.subjectCode} - ${meta.subjectName}`, col1X + 22, currentY);
+  const maxSubjWidth = col2X - col1X - 25;
+  const subjFormatted = doc.splitTextToSize(`${meta.subjectCode} - ${meta.subjectName}`, maxSubjWidth)[0];
+  doc.text(subjFormatted, col1X + 22, currentY);
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
-  doc.text('Marks Matrix:', col2X, currentY);
+  doc.text('Evaluator Name:', col2X, currentY);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(`Max: ${meta.maxMarks}  |  Pass Mark: ${meta.passMark}`, col2X + 28, currentY);
+  doc.text(meta.evaluatorName || '-', col2X + 28, currentY);
+
+  // Row 4
+  currentY += 4.5;
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Marks Matrix:', col1X, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Max: ${meta.maxMarks}  |  Pass Mark: ${meta.passMark}`, col1X + 22, currentY);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(71, 85, 105);
+  doc.text('Assessment Type:', col2X, currentY);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(15, 23, 42);
+  doc.text(meta.examType, col2X + 28, currentY);
 
   // 4. DETAILED MARKS TABLE VIA autoTable
   const tableData = students.map((s, idx) => [
@@ -344,13 +362,13 @@ export async function exportMarksheetToPDF(
     { align: 'center' }
   );
 
-  // 6. SIGNATURE SECTION (3 Signatures: 1. Evaluator Name & Signature, 2. Exam Cell Coordinator, 3. Principal Signature)
+  // 6. SIGNATURE SECTION (3 Signatures: 1. Evaluator Signature, 2. Exam Cell Coordinator, 3. Principal Signature)
   const sigY = evalBoxY + evalCardHeight + 12;
   const sigBlockWidth = (pageWidth - margin * 2) / 3;
 
   const sigs = [
     {
-      title: 'Evaluator Name & Signature',
+      title: 'Evaluator Signature',
       name: meta.evaluatorName ? `(${meta.evaluatorName})` : '',
       x: margin + sigBlockWidth * 0.5,
     },

@@ -357,7 +357,7 @@ export default function DownloadPrintModal({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 text-center text-xs">
             <div>
               <div className="w-36 sm:w-44 h-0.5 bg-slate-400 mx-auto mb-2" />
-              <p className="font-semibold text-slate-700">Evaluator Name & Signature</p>
+              <p className="font-semibold text-slate-700">Evaluator Signature</p>
               {meta.evaluatorName && (
                 <p className="text-slate-500 font-bold text-[11px]">({meta.evaluatorName})</p>
               )}

@@ -26,6 +26,8 @@
         "yearNumber": { "type": "number" },
         "yearLabel": { "type": "string" },
         "academicYear": { "type": "string" },
+        "isQrActive": { "type": "boolean" },
+        "qrStatus": { "type": "string" },
         "students": { "type": "array" }
       },
       "required": ["id", "department", "semester", "yearNumber", "students"]

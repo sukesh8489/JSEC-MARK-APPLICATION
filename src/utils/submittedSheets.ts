@@ -208,7 +208,7 @@ export function exportMarksheetToXLS(
         ]),
         [],
         [],
-        ['Evaluator Name & Signature', '', '', 'Exam Cell Coordinator', '', '', 'Principal Signature', ''],
+        ['Evaluator Signature', '', '', 'Exam Cell Coordinator', '', '', 'Principal Signature', ''],
         [
           meta.evaluatorName ? `(${meta.evaluatorName})` : '',
           '',

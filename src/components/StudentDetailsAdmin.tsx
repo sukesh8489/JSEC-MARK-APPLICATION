@@ -8,10 +8,14 @@ import {
   DEFAULT_BATCHES,
   getStoredBatches,
   saveStoredBatches,
+  getStoredDepartments,
+  addNewDepartment,
+  isBatchQrActive,
 } from '../utils/studentBatches';
 import {
   subscribeToLiveBatches,
   saveBatchToFirestore,
+  updateBatchQrStatusInFirestore,
 } from '../services/firestoreService';
 import {
   Users,
@@ -48,6 +52,12 @@ import {
   HeartPulse,
   Laptop,
   CheckCircle2,
+  Lock,
+  Radio,
+  Zap,
+  Globe,
+  Compass,
+  Terminal,
 } from 'lucide-react';
 
 interface StudentDetailsAdminProps {
@@ -134,12 +144,69 @@ const DEPT_THEMES: Record<
     accentGradient: 'from-red-500 to-rose-600',
     tagBg: 'bg-red-50 text-red-700 border-red-200',
   },
+  'ECE': {
+    icon: Radio,
+    iconBgLight: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+    iconTextLight: 'text-cyan-600',
+    borderActive: 'border-cyan-400',
+    accentGradient: 'from-cyan-500 to-blue-600',
+    tagBg: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  },
+  'EEE': {
+    icon: Zap,
+    iconBgLight: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+    iconTextLight: 'text-yellow-600',
+    borderActive: 'border-yellow-400',
+    accentGradient: 'from-yellow-500 to-amber-600',
+    tagBg: 'bg-yellow-50 text-yellow-800 border-yellow-200',
+  },
+  'CIVIL': {
+    icon: Compass,
+    iconBgLight: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    iconTextLight: 'text-emerald-600',
+    borderActive: 'border-emerald-400',
+    accentGradient: 'from-emerald-500 to-teal-600',
+    tagBg: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  },
+  'IT': {
+    icon: Globe,
+    iconBgLight: 'bg-sky-50 text-sky-700 border-sky-200',
+    iconTextLight: 'text-sky-600',
+    borderActive: 'border-sky-400',
+    accentGradient: 'from-sky-500 to-blue-600',
+    tagBg: 'bg-sky-50 text-sky-700 border-sky-200',
+  },
+  'CYBER': {
+    icon: ShieldCheck,
+    iconBgLight: 'bg-purple-50 text-purple-700 border-purple-200',
+    iconTextLight: 'text-purple-600',
+    borderActive: 'border-purple-400',
+    accentGradient: 'from-purple-500 to-indigo-600',
+    tagBg: 'bg-purple-50 text-purple-700 border-purple-200',
+  },
+  'MBA': {
+    icon: GraduationCap,
+    iconBgLight: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    iconTextLight: 'text-indigo-600',
+    borderActive: 'border-indigo-400',
+    accentGradient: 'from-indigo-500 to-purple-600',
+    tagBg: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+  },
+  'MCA': {
+    icon: Terminal,
+    iconBgLight: 'bg-slate-100 text-slate-800 border-slate-300',
+    iconTextLight: 'text-slate-700',
+    borderActive: 'border-slate-400',
+    accentGradient: 'from-slate-600 to-slate-800',
+    tagBg: 'bg-slate-100 text-slate-700 border-slate-200',
+  },
 };
 
 export default function StudentDetailsAdmin({
   onOpenBatchMarkEntry,
 }: StudentDetailsAdminProps) {
   const [batches, setBatches] = useState<YearBatchConfig[]>(getStoredBatches);
+  const [departmentsList, setDepartmentsList] = useState<string[]>(getStoredDepartments);
   const [selectedDept, setSelectedDept] = useState<string>('AI&DS - Artificial Intelligence & Data Science');
   const [selectedBatchId, setSelectedBatchId] = useState<string>('aids_year1_sem1');
   const [searchQuery, setSearchQuery] = useState('');
@@ -153,6 +220,13 @@ export default function StudentDetailsAdmin({
   const [studentToEdit, setStudentToEdit] = useState<BatchStudent | null>(null);
   const [studentToDelete, setStudentToDelete] = useState<BatchStudent | null>(null);
   const [isDeleteAllOpen, setIsDeleteAllOpen] = useState(false);
+
+  // Add Department modal state
+  const [isAddDeptModalOpen, setIsAddDeptModalOpen] = useState(false);
+  const [newDeptCode, setNewDeptCode] = useState('');
+  const [newDeptName, setNewDeptName] = useState('');
+  const [newDeptError, setNewDeptError] = useState<string | null>(null);
+  const [isCreatingDept, setIsCreatingDept] = useState(false);
 
   // Single Add form state
   const [newRegNo, setNewRegNo] = useState('');
@@ -192,6 +266,83 @@ export default function StudentDetailsAdmin({
       (b) => b.department.trim().toLowerCase() === selectedDept.trim().toLowerCase()
     );
   }, [batches, selectedDept]);
+
+  // List of available departments including any dynamically created ones
+  const availableDepartments = useMemo(() => {
+    const set = new Set<string>(departmentsList);
+    batches.forEach((b) => {
+      if (b.department && b.department.trim()) {
+        set.add(b.department.trim());
+      }
+    });
+    return Array.from(set);
+  }, [departmentsList, batches]);
+
+  // Handlers for Add Department Modal
+  const handleOpenAddDeptModal = () => {
+    setNewDeptCode('');
+    setNewDeptName('');
+    setNewDeptError(null);
+    setIsAddDeptModalOpen(true);
+  };
+
+  const handleCreateDepartment = async (e?: FormEvent) => {
+    if (e) e.preventDefault();
+    const code = newDeptCode.trim().toUpperCase();
+    const name = newDeptName.trim();
+
+    if (!code) {
+      setNewDeptError('Please enter a department short code (e.g. ECE, CIVIL, EEE)');
+      return;
+    }
+    if (!name) {
+      setNewDeptError('Please enter the full department name (e.g. Electronics & Communication Engineering)');
+      return;
+    }
+
+    const formatted = `${code} - ${name}`;
+    const alreadyExists = availableDepartments.some(
+      (d) =>
+        d.toLowerCase() === formatted.toLowerCase() ||
+        getDeptCode(d).toLowerCase() === code.toLowerCase()
+    );
+
+    if (alreadyExists) {
+      setNewDeptError(`Department "${code}" or "${formatted}" already exists.`);
+      return;
+    }
+
+    setIsCreatingDept(true);
+    try {
+      const { newDept, updatedDepts, newBatches } = addNewDepartment(code, name);
+      setDepartmentsList(updatedDepts);
+
+      // Save each generated academic year batch to Firestore
+      for (const b of newBatches) {
+        await saveBatchToFirestore(b).catch((err) => {
+          console.warn('Notice: Firestore batch save:', err);
+        });
+      }
+
+      const refreshed = getStoredBatches();
+      setBatches(refreshed);
+      setSelectedDept(newDept);
+      if (newBatches.length > 0) {
+        setSelectedBatchId(newBatches[0].id);
+      }
+
+      setIsAddDeptModalOpen(false);
+      setNewDeptCode('');
+      setNewDeptName('');
+      setNewDeptError(null);
+      showToast(`✅ New Department "${newDept}" created with 4 academic year batches!`);
+    } catch (err) {
+      console.error('Error creating department:', err);
+      setNewDeptError('Failed to create department. Please try again.');
+    } finally {
+      setIsCreatingDept(false);
+    }
+  };
 
   // Active batch fallback
   const activeBatch: YearBatchConfig = useMemo(() => {
@@ -325,6 +476,63 @@ export default function StudentDetailsAdmin({
     a.download = `JSEC_${activeBatch.id}_QR.png`;
     a.click();
     showToast('QR Code image downloaded');
+  };
+
+  // Toggle Activate / Deactivate option for batch QR code
+  const handleToggleQrStatus = async (batch: YearBatchConfig, activate: boolean) => {
+    let modifiedBatch: YearBatchConfig | undefined;
+    const updated = batches.map((b) => {
+      if (b.id !== batch.id) return b;
+      modifiedBatch = {
+        ...b,
+        isQrActive: activate,
+        qrStatus: activate ? 'ACTIVE' : 'DEACTIVATED',
+        qrActivatedAt: activate ? new Date().toISOString() : b.qrActivatedAt,
+        qrDeactivatedAt: !activate ? new Date().toISOString() : b.qrDeactivatedAt,
+      };
+      return modifiedBatch;
+    });
+
+    updateBatches(updated, modifiedBatch);
+
+    try {
+      await updateBatchQrStatusInFirestore(batch.id, activate);
+    } catch (err) {
+      console.warn('Notice: Firestore live sync for QR status:', err);
+    }
+
+    showToast(
+      activate
+        ? `✅ QR Code for ${batch.yearLabel} is now ACTIVATED! Staff scan will open Mark Entry.`
+        : `🛑 QR Code for ${batch.yearLabel} is now DEACTIVATED! Staff scan access is blocked.`
+    );
+  };
+
+  // Master Toggle: Activate or Deactivate QR codes for ALL year batches
+  const handleToggleAllBatchesQr = async (activate: boolean) => {
+    const updated = batches.map((b) => ({
+      ...b,
+      isQrActive: activate,
+      qrStatus: (activate ? 'ACTIVE' : 'DEACTIVATED') as 'ACTIVE' | 'DEACTIVATED',
+      qrActivatedAt: activate ? new Date().toISOString() : b.qrActivatedAt,
+      qrDeactivatedAt: !activate ? new Date().toISOString() : b.qrDeactivatedAt,
+    }));
+
+    updateBatches(updated);
+
+    try {
+      await Promise.allSettled(
+        batches.map((b) => updateBatchQrStatusInFirestore(b.id, activate))
+      );
+    } catch (err) {
+      console.warn('Notice: Firestore bulk QR update:', err);
+    }
+
+    showToast(
+      activate
+        ? `✅ All Year QR codes ACTIVATED! Staff scan can open Mark Entry across all batches.`
+        : `🛑 All Year QR codes DEACTIVATED! Mark Entry scan access is now blocked across all batches.`
+    );
   };
 
   // Open single add modal with auto-suggested Register Number
@@ -632,6 +840,14 @@ export default function StudentDetailsAdmin({
     return deptBatches.reduce((acc, b) => acc + b.students.length, 0);
   }, [deptBatches]);
 
+  // Count of active batches across all years / batches
+  const allBatchesCount = batches.length;
+  const activeBatchesCount = useMemo(() => {
+    return batches.filter((b) => isBatchQrActive(b)).length;
+  }, [batches]);
+  const isAllBatchesActive = allBatchesCount > 0 && activeBatchesCount === allBatchesCount;
+  const isAllBatchesDeactivated = allBatchesCount > 0 && activeBatchesCount === 0;
+
   return (
     <div className="space-y-6">
       {/* Toast Notification */}
@@ -643,6 +859,104 @@ export default function StudentDetailsAdmin({
       )}
 
       {/* ========================================================================= */}
+      {/* MASTER QR CODE CONTROL: ACTIVATE / DEACTIVATE FOR ALL YEAR QR CODES      */}
+      {/* ========================================================================= */}
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <div
+            className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors shadow-2xs shrink-0 ${
+              isAllBatchesActive
+                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                : isAllBatchesDeactivated
+                ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                : 'bg-blue-50 text-blue-900 border border-blue-200'
+            }`}
+          >
+            <QrCode className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-black text-slate-900 tracking-wide uppercase">
+                ALL YEAR QR CODE ACCESS CONTROL
+              </span>
+              <span
+                className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                  isAllBatchesActive
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : isAllBatchesDeactivated
+                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isAllBatchesActive
+                      ? 'bg-emerald-500 animate-pulse'
+                      : isAllBatchesDeactivated
+                      ? 'bg-rose-500'
+                      : 'bg-amber-500'
+                  }`}
+                />
+                <span>
+                  {isAllBatchesActive
+                    ? 'All Year QR: ACTIVE'
+                    : isAllBatchesDeactivated
+                    ? 'All Year QR: DEACTIVATED'
+                    : `${activeBatchesCount}/${allBatchesCount} Batches Active`}
+                </span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* The requested option: QR: ACTIVATE, DEACTIVATE for all yr qr */}
+        <div className="flex items-center gap-2 bg-slate-100/90 p-1.5 rounded-xl border border-slate-200/90 shadow-2xs self-start md:self-center">
+          <span className="text-xs font-black text-slate-700 px-2 tracking-wide">
+            QR:
+          </span>
+          <div className="flex items-center gap-1" role="group" aria-label="QR Activate Deactivate for all year qr">
+            <button
+              type="button"
+              id="btn-qr-activate-all-yr"
+              onClick={() => handleToggleAllBatchesQr(true)}
+              className={`px-3.5 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                isAllBatchesActive
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-white text-slate-700 hover:text-emerald-700 hover:bg-emerald-50/70 border border-slate-200'
+              }`}
+              title="Activate all year QR codes: staff scan will open mark enter page"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isAllBatchesActive ? 'bg-white animate-pulse' : 'bg-emerald-500'
+                }`}
+              />
+              <span>ACTIVATE</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-qr-deactivate-all-yr"
+              onClick={() => handleToggleAllBatchesQr(false)}
+              className={`px-3.5 py-1.5 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                isAllBatchesDeactivated
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : 'bg-white text-slate-700 hover:text-rose-700 hover:bg-rose-50/70 border border-slate-200'
+              }`}
+              title="Deactivate all year QR codes: staff scan will NOT open mark enter page"
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  isAllBatchesDeactivated ? 'bg-white' : 'bg-rose-500'
+                }`}
+              />
+              <span>DEACTIVATE</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
       {/* STEP 1: DEPARTMENT OPTIONS                                                */}
       {/* ========================================================================= */}
       <div className="bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-xs space-y-4">
@@ -652,13 +966,20 @@ export default function StudentDetailsAdmin({
             <span className="w-7 h-7 rounded-xl bg-[#0f284e] text-white flex items-center justify-center text-xs font-black shadow-xs">
               1
             </span>
-            <div>
+            <div className="flex items-center gap-2">
               <h3 className="font-black text-slate-900 text-sm sm:text-base tracking-tight">
                 Select Department Options
               </h3>
-              <p className="text-xs text-slate-500">
-                Choose academic department to load corresponding year batches
-              </p>
+              <button
+                type="button"
+                id="btn-add-dept-icon"
+                onClick={handleOpenAddDeptModal}
+                className="w-7 h-7 rounded-lg bg-blue-50 hover:bg-[#0f284e] text-[#0f284e] hover:text-white border border-blue-200 transition-all flex items-center justify-center cursor-pointer shadow-2xs group"
+                title="Add New Department"
+                aria-label="Add New Department"
+              >
+                <Plus className="w-4 h-4 transition-transform group-hover:scale-125" />
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-center">
@@ -673,7 +994,7 @@ export default function StudentDetailsAdmin({
 
         {/* Department Selection Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-3.5">
-          {DEPARTMENTS.map((dept, idx) => {
+          {availableDepartments.map((dept, idx) => {
             const isSelected = selectedDept === dept;
             const deptCode = getDeptCode(dept);
             const deptFullName = getDeptFullName(dept);
@@ -877,15 +1198,43 @@ export default function StudentDetailsAdmin({
                   </div>
 
                   {/* Semester & Academic Period */}
-                  <div
-                    className={`text-xs mt-1.5 flex items-center gap-1.5 font-medium ${
-                      isSelected ? 'text-blue-200/90' : 'text-slate-500'
-                    }`}
-                  >
-                    <Calendar className="w-3.5 h-3.5 opacity-70 shrink-0" />
-                    <span className="truncate">
-                      {batch.semester} • {batch.academicYear}
-                    </span>
+                  <div className="flex items-center justify-between gap-1 mt-1.5 flex-wrap">
+                    <div
+                      className={`text-xs flex items-center gap-1.5 font-medium ${
+                        isSelected ? 'text-blue-200/90' : 'text-slate-500'
+                      }`}
+                    >
+                      <Calendar className="w-3.5 h-3.5 opacity-70 shrink-0" />
+                      <span className="truncate">
+                        {batch.semester} • {batch.academicYear}
+                      </span>
+                    </div>
+
+                    {isBatchQrActive(batch) ? (
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 ${
+                          isSelected
+                            ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/40'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}
+                        title="QR Code is Active - scan will open Mark Entry"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>QR Active</span>
+                      </span>
+                    ) : (
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 shrink-0 ${
+                          isSelected
+                            ? 'bg-rose-500/30 text-rose-200 border border-rose-400/40'
+                            : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                        title="QR Code is Deactivated - scan access is blocked"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                        <span>QR Inactive</span>
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -936,47 +1285,146 @@ export default function StudentDetailsAdmin({
         {/* Left Column: Staff Direct Mark Entry QR Code */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-white rounded-2xl p-5 border border-slate-200/90 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
               <div className="flex items-center gap-2">
-                <div className="p-2 bg-blue-50 text-blue-900 rounded-lg">
+                <div
+                  className={`p-2 rounded-lg transition-colors ${
+                    isBatchQrActive(activeBatch)
+                      ? 'bg-blue-50 text-blue-900'
+                      : 'bg-rose-50 text-rose-700'
+                  }`}
+                >
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div>
                   <h4 className="font-extrabold text-slate-900 text-sm">
                     Staff Mark Entry QR Code
                   </h4>
-                  <p className="text-[11px] text-slate-500 truncate max-w-[200px]">
+                  <p className="text-[11px] text-slate-500 truncate max-w-[180px]">
                     For {activeBatch.yearLabel}
                   </p>
                 </div>
               </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Active QR
-              </span>
+
+              {/* Activate / Deactivate Option Toggle */}
+              <div
+                className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/90 shadow-2xs self-start sm:self-center"
+                role="group"
+                aria-label="QR Code Access Option"
+              >
+                <button
+                  type="button"
+                  id={`btn-qr-activate-${activeBatch.id}`}
+                  onClick={() => handleToggleQrStatus(activeBatch, true)}
+                  className={`px-2.5 py-1 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                    isBatchQrActive(activeBatch)
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-emerald-700 hover:bg-white/80'
+                  }`}
+                  title="Activate QR: Scan opens Mark Entry page"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      isBatchQrActive(activeBatch) ? 'bg-white animate-pulse' : 'bg-emerald-500'
+                    }`}
+                  />
+                  <span>Activate</span>
+                </button>
+
+                <button
+                  type="button"
+                  id={`btn-qr-deactivate-${activeBatch.id}`}
+                  onClick={() => handleToggleQrStatus(activeBatch, false)}
+                  className={`px-2.5 py-1 text-xs font-black rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                    !isBatchQrActive(activeBatch)
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-rose-700 hover:bg-white/80'
+                  }`}
+                  title="Deactivate QR: Scan will NOT open Mark Entry page"
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${
+                      !isBatchQrActive(activeBatch) ? 'bg-white' : 'bg-rose-400'
+                    }`}
+                  />
+                  <span>Deactivate</span>
+                </button>
+              </div>
             </div>
 
             {/* QR Code Display Canvas */}
-            <div className="flex flex-col items-center justify-center p-4 bg-slate-50 rounded-xl border border-slate-200/80">
-              {qrDataUrl ? (
-                <img
-                  src={qrDataUrl}
-                  alt={`Staff Mark Entry QR for ${activeBatch.yearLabel}`}
-                  className="w-52 h-52 rounded-lg shadow-2xs border border-slate-200 bg-white p-2"
-                />
-              ) : (
-                <div className="w-52 h-52 flex items-center justify-center bg-white rounded-lg text-slate-400">
-                  <RefreshCw className="w-6 h-6 animate-spin" />
-                </div>
-              )}
+            <div
+              className={`flex flex-col items-center justify-center p-4 rounded-xl border transition-all relative overflow-hidden ${
+                isBatchQrActive(activeBatch)
+                  ? 'bg-slate-50 border-slate-200/80'
+                  : 'bg-rose-50/50 border-rose-200'
+              }`}
+            >
+              <div className="relative">
+                {qrDataUrl ? (
+                  <img
+                    src={qrDataUrl}
+                    alt={`Staff Mark Entry QR for ${activeBatch.yearLabel}`}
+                    className={`w-52 h-52 rounded-lg shadow-2xs border bg-white p-2 transition-all ${
+                      isBatchQrActive(activeBatch)
+                        ? 'border-slate-200'
+                        : 'border-rose-300 opacity-25 grayscale'
+                    }`}
+                  />
+                ) : (
+                  <div className="w-52 h-52 flex items-center justify-center bg-white rounded-lg text-slate-400">
+                    <RefreshCw className="w-6 h-6 animate-spin" />
+                  </div>
+                )}
 
+                {/* Overlay when QR is Deactivated */}
+                {!isBatchQrActive(activeBatch) && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-rose-950/80 rounded-lg text-white p-3 text-center backdrop-blur-2xs animate-in fade-in">
+                    <div className="w-10 h-10 rounded-full bg-rose-600 flex items-center justify-center mb-1.5 shadow-md">
+                      <Lock className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="text-xs font-black tracking-wider uppercase text-rose-200">
+                      QR Deactivated
+                    </span>
+                    <span className="text-[10px] text-white/90 mt-1 leading-tight max-w-[170px]">
+                      Access blocked. Mark enter page will <strong>not open</strong> on scan.
+                    </span>
+                    <button
+                      type="button"
+                      id="btn-quick-activate-overlay"
+                      onClick={() => handleToggleQrStatus(activeBatch, true)}
+                      className="mt-2.5 px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg shadow-xs cursor-pointer transition flex items-center gap-1"
+                    >
+                      <span>Click to Activate</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Status explanation */}
               <div className="mt-3 text-center">
-                <div className="text-xs font-bold text-slate-800">
-                  Scan to Enter Marks
-                </div>
-                <div className="text-[11px] text-slate-500 max-w-[230px] mt-0.5 leading-snug">
-                  Staff scan this code with any smartphone camera to launch the Mark Entry portal for{' '}
-                  <span className="font-bold text-slate-800">{activeBatch.semester}</span> ({getDeptCode(activeBatch.department)}) with all {activeBatch.students.length} students loaded.
-                </div>
+                {isBatchQrActive(activeBatch) ? (
+                  <>
+                    <div className="text-xs font-bold text-emerald-800 flex items-center justify-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                      <span>Status: ACTIVE • Scan to Enter Marks</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500 max-w-[230px] mt-0.5 leading-snug">
+                      Staff scan this code with any smartphone camera to launch the Mark Entry portal for{' '}
+                      <span className="font-bold text-slate-800">{activeBatch.semester}</span> ({getDeptCode(activeBatch.department)}) with all {activeBatch.students.length} students loaded.
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-xs font-bold text-rose-700 flex items-center justify-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      <span>Status: DEACTIVATED • Access Closed</span>
+                    </div>
+                    <div className="text-[11px] text-rose-600 max-w-[240px] mt-0.5 leading-snug">
+                      Scanning this QR will <strong>NOT open</strong> the mark entry page. Select <strong>Activate</strong> above to enable staff mark entry.
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -986,10 +1434,18 @@ export default function StudentDetailsAdmin({
                 type="button"
                 id="btn-open-mark-entry-batch"
                 onClick={() => onOpenBatchMarkEntry(activeBatch.id, activeBatch.semester, activeBatch.department)}
-                className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-[#0f284e] hover:bg-blue-900 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer"
+                className={`w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold shadow-xs transition cursor-pointer ${
+                  isBatchQrActive(activeBatch)
+                    ? 'bg-[#0f284e] hover:bg-blue-900 text-white'
+                    : 'bg-slate-700 hover:bg-slate-800 text-slate-100'
+                }`}
               >
                 <ExternalLink className="w-4 h-4" />
-                <span>Open Mark Entry for this Batch</span>
+                <span>
+                  {isBatchQrActive(activeBatch)
+                    ? 'Open Mark Entry for this Batch'
+                    : 'Preview Mark Entry (QR Deactivated)'}
+                </span>
               </button>
 
               <div className="grid grid-cols-2 gap-2">
@@ -1684,7 +2140,7 @@ export default function StudentDetailsAdmin({
                   onChange={(e) => setRenameDepartment(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-800"
                 >
-                  {DEPARTMENTS.map((dept) => (
+                  {availableDepartments.map((dept) => (
                     <option key={dept} value={dept}>
                       {dept}
                     </option>
@@ -1723,6 +2179,145 @@ export default function StudentDetailsAdmin({
                   className="px-5 py-2 bg-[#0f284e] hover:bg-blue-900 text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer transition"
                 >
                   Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ADD NEW DEPARTMENT                                                 */}
+      {/* ========================================================================= */}
+      {isAddDeptModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-[#0f284e] text-white rounded-xl shadow-xs">
+                  <Plus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-black text-slate-900 text-base">
+                    Add New Department
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Create a new academic branch and generate its 4 year batches
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAddDeptModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateDepartment} className="space-y-4">
+              {/* Department Short Code */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Department Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="input-new-dept-code"
+                  value={newDeptCode}
+                  onChange={(e) => {
+                    setNewDeptCode(e.target.value.toUpperCase());
+                    setNewDeptError(null);
+                  }}
+                  placeholder="e.g. ECE, CIVIL, EEE, IT"
+                  maxLength={12}
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-800 uppercase"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Short acronym used for department tabs and batch identification
+                </span>
+              </div>
+
+              {/* Department Full Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                  Full Department Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  id="input-new-dept-name"
+                  value={newDeptName}
+                  onChange={(e) => {
+                    setNewDeptName(e.target.value);
+                    setNewDeptError(null);
+                  }}
+                  placeholder="e.g. Electronics & Communication Engineering"
+                  required
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-800"
+                />
+              </div>
+
+              {/* Preview Box */}
+              {newDeptCode.trim() && (
+                <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-blue-900">
+                      Live Preview
+                    </span>
+                    <span className="text-[10px] text-blue-700 font-bold">
+                      4 Year Batches will be generated
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 bg-[#0f284e] text-white text-xs font-black rounded-md">
+                      {newDeptCode.trim().toUpperCase()}
+                    </span>
+                    <span className="text-xs font-bold text-slate-800">
+                      {newDeptName.trim() || 'Department Name'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 mt-1">
+                    Will auto-create batches for 1st Year (Sem 1), 2nd Year (Sem 3), 3rd Year (Sem 5), and 4th Year (Sem 7) with QR scan access enabled.
+                  </p>
+                </div>
+              )}
+
+              {/* Error Message */}
+              {newDeptError && (
+                <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl text-xs font-medium flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{newDeptError}</span>
+                </div>
+              )}
+
+              {/* Modal Actions */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsAddDeptModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  id="btn-submit-create-dept"
+                  disabled={isCreatingDept || !newDeptCode.trim() || !newDeptName.trim()}
+                  className="px-5 py-2.5 bg-[#0f284e] hover:bg-blue-900 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  {isCreatingDept ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Creating Batches...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      <span>Create Department</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

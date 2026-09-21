@@ -15,6 +15,8 @@ import {
   findBatchByDeptAndSem,
   YearBatchConfig,
   DEPARTMENTS,
+  getStoredDepartments,
+  isBatchQrActive,
 } from '../utils/studentBatches';
 import { addSubmittedMarksheet, getStoredSubmittedSheets, SubmittedSheetRecord, findDuplicateSubmittedSheet } from '../utils/submittedSheets';
 import { saveMarksheetToFirestore, subscribeToLiveBatches, subscribeToLiveMarksheets } from '../services/firestoreService';
@@ -34,6 +36,10 @@ import {
   QrCode,
   Sparkles,
   Database,
+  ShieldAlert,
+  AlertTriangle,
+  RefreshCw,
+  ArrowLeft,
 } from 'lucide-react';
 
 interface MarkEntryPanelProps {
@@ -43,6 +49,7 @@ interface MarkEntryPanelProps {
   initialDepartment?: string;
   isLockedToBatch?: boolean;
   onNotifyAdminSubmission?: (meta: AssessmentMeta, students: StudentMarkRecord[]) => void;
+  onBackToHome?: () => void;
 }
 
 export default function MarkEntryPanel({
@@ -51,6 +58,7 @@ export default function MarkEntryPanel({
   initialDepartment,
   isLockedToBatch = false,
   onNotifyAdminSubmission,
+  onBackToHome,
 }: MarkEntryPanelProps) {
   // Helper to locate target batch based on ID, department + semester, or fallback
   const findTargetBatch = (): YearBatchConfig | undefined => {
@@ -310,9 +318,13 @@ export default function MarkEntryPanel({
     }
   }, [initialBatchId, initialSemester, initialDepartment]);
 
+  // Live batches state synchronized with Firestore
+  const [liveBatches, setLiveBatches] = useState<YearBatchConfig[]>(() => getStoredBatches());
+
   // Real-time synchronization with Firestore student batches
   useEffect(() => {
     const unsubscribe = subscribeToLiveBatches((batches) => {
+      setLiveBatches(batches);
       let matched: YearBatchConfig | undefined;
       if (initialBatchId) {
         matched = batches.find((b) => b.id === initialBatchId);
@@ -334,6 +346,36 @@ export default function MarkEntryPanel({
 
     return () => unsubscribe();
   }, [meta.department, meta.semester, meta.maxMarks, initialBatchId]);
+
+  // Current batch configuration (live from Firestore / local cache)
+  const currentBatchConfig = useMemo(() => {
+    if (initialBatchId) {
+      const b = liveBatches.find((item) => item.id === initialBatchId);
+      if (b) return b;
+    }
+    if (initialDepartment && initialSemester) {
+      const b = liveBatches.find(
+        (item) =>
+          item.department.trim().toLowerCase() === initialDepartment.trim().toLowerCase() &&
+          item.semester.trim().toLowerCase() === initialSemester.trim().toLowerCase()
+      );
+      if (b) return b;
+    }
+    const b = liveBatches.find(
+      (item) =>
+        item.department.trim().toLowerCase() === meta.department.trim().toLowerCase() &&
+        item.semester.trim().toLowerCase() === meta.semester.trim().toLowerCase()
+    );
+    if (b) return b;
+    return findTargetBatch();
+  }, [liveBatches, initialBatchId, initialDepartment, initialSemester, meta.department, meta.semester]);
+
+  // Check if QR access is deactivated for this batch
+  // When deactivated: Mark entry page MUST NOT open
+  const isQrDeactivated = useMemo(() => {
+    if (!currentBatchConfig) return false;
+    return !isBatchQrActive(currentBatchConfig);
+  }, [currentBatchConfig]);
 
   // Modals state
   const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
@@ -591,32 +633,6 @@ export default function MarkEntryPanel({
     showToast('Student record removed');
   };
 
-  // Clear all entered marks and details in current form
-  const handleClearForm = () => {
-    setMeta((prev) => ({
-      ...prev,
-      subjectCode: '',
-      subjectName: '',
-      facultyInCharge: '',
-      evaluatorName: '',
-      examCellCoordinator: '',
-      status: 'Draft (Editable)',
-      isUnlocked: true,
-    }));
-    setStudents((prev) =>
-      prev.map((s) => {
-        const { grade, result } = calculateGradeAndResult('PRESENT', '', meta.maxMarks, meta.passMark);
-        return {
-          ...s,
-          attendance: 'PRESENT',
-          marksObtained: '',
-          grade,
-          result,
-        };
-      })
-    );
-    showToast('Cleared subject, faculty, and marks in form.');
-  };
 
   // Submit Marks to Admin
   const handleSubmitMarks = () => {
@@ -727,6 +743,116 @@ export default function MarkEntryPanel({
     }
     setIsDownloadModalOpen(true);
   };
+
+  // IF BATCH QR IS DEACTIVATED:
+  // Strictly prevent mark enter page from opening!
+  // "active nu kuduthu scan panna mark enter page open aganum.... illana open aga kudathu"
+  if (isQrDeactivated) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-6">
+        {/* Toast Alert */}
+        {toastMessage && (
+          <div className="fixed bottom-6 right-6 z-50 bg-[#0f284e] text-white px-4 py-3 rounded-xl shadow-xl border border-blue-400/40 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 text-sm font-medium">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-200/90 overflow-hidden text-center animate-in fade-in zoom-in-95 duration-200">
+          {/* Top Banner with Alert Accent */}
+          <div className="bg-gradient-to-r from-rose-600 via-rose-700 to-red-800 p-8 text-white relative">
+            <div className="w-20 h-20 mx-auto rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center mb-4 shadow-lg">
+              <ShieldAlert className="w-10 h-10 text-white animate-pulse" />
+            </div>
+            <span className="inline-block text-[11px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-white/20 text-white border border-white/30 mb-2">
+              Access Restricted • QR Deactivated
+            </span>
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+              QR Code Access Deactivated
+            </h2>
+            <p className="text-sm text-rose-100 mt-2 max-w-md mx-auto font-medium">
+              Mark Entry Portal is currently closed for this batch by Central Exam Cell.
+            </p>
+          </div>
+
+          {/* Batch Information Box */}
+          <div className="p-6 sm:p-8 space-y-6">
+            <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200/80 text-left space-y-3">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                  Target Batch Details
+                </span>
+                <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-rose-600"></span>
+                  <span>DEACTIVATED</span>
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-slate-500 font-medium">Batch:</span>
+                  <p className="font-extrabold text-slate-900 text-sm mt-0.5">
+                    {currentBatchConfig?.yearLabel || 'Selected Batch'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-medium">Department:</span>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {currentBatchConfig?.department || meta.department}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-medium">Semester:</span>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {currentBatchConfig?.semester || meta.semester}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-slate-500 font-medium">Academic Year:</span>
+                  <p className="font-bold text-slate-800 mt-0.5">
+                    {currentBatchConfig?.academicYear || meta.academicYear}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Instruction Notice */}
+            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200 text-left flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-900 leading-relaxed font-medium">
+                QR access is currently deactivated for this batch. Staff can only access the Mark Entry page once the administrator sets the option to <strong>Activate</strong> in the Admin Panel.
+              </p>
+            </div>
+
+            {/* Real-time sync notification badge */}
+            <div className="flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-50 border border-blue-200/80 rounded-xl text-xs font-semibold text-blue-900">
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping shrink-0" />
+              <span>Real-Time Sync Active: When Admin clicks "Activate" in Admin Panel, this page will unlock automatically.</span>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-center pt-2">
+              <button
+                type="button"
+                id="btn-return-portal-home"
+                onClick={() => {
+                  if (onBackToHome) {
+                    onBackToHome();
+                  } else {
+                    window.location.href = window.location.pathname;
+                  }
+                }}
+                className="w-full sm:w-auto px-6 py-3 bg-[#0f284e] hover:bg-blue-900 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <ArrowLeft className="w-4 h-4 text-white/80" />
+                <span>Return to Portal Login</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -875,7 +1001,10 @@ export default function MarkEntryPanel({
                 {isLockedToBatch ? (
                   <option value={meta.department}>{meta.department}</option>
                 ) : (
-                  DEPARTMENTS.map((dept) => (
+                  (getStoredDepartments().includes(meta.department)
+                    ? getStoredDepartments()
+                    : [meta.department, ...getStoredDepartments()]
+                  ).map((dept) => (
                     <option key={dept} value={dept}>
                       {dept}
                     </option>
@@ -1257,32 +1386,6 @@ export default function MarkEntryPanel({
         </div>
       )}
 
-      {/* Missing Header Details Warning Banner (Only shown when required fields are missing) */}
-      {!isHeaderComplete && (
-        <div
-          id="header-details-status-bar"
-          className="rounded-2xl p-4 border bg-amber-50/80 border-amber-300 text-amber-950 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-        >
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-amber-100 border border-amber-300 flex items-center justify-center shrink-0 text-amber-700">
-              <Lock className="w-4 h-4 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-amber-950">
-                <strong className="font-extrabold uppercase">Complete Details Above First:</strong> You cannot submit marks until all details above are entered. Missing:{' '}
-                <span className="text-red-700 font-extrabold underline">
-                  {missingHeaderFields.map((f) => f.label).join(', ')}
-                </span>
-              </p>
-            </div>
-          </div>
-          <div className="shrink-0 font-bold text-[11px] flex items-center gap-2">
-            <span className="bg-amber-200 text-amber-900 border border-amber-300 px-3 py-1 rounded-full font-extrabold">
-              {REQUIRED_HEADER_FIELDS.length - missingHeaderFields.length} of {REQUIRED_HEADER_FIELDS.length} Details Entered
-            </span>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* SECTION 2: EVALUATION SUMMARY & PERFORMANCE METRICS (UI1 & UI2)           */}
@@ -1402,16 +1505,6 @@ export default function MarkEntryPanel({
               )}
             </button>
 
-            <button
-              type="button"
-              id="btn-clear-form"
-              onClick={handleClearForm}
-              title="Clear subject, staff names, and entered marks in this form"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold border border-slate-300 transition cursor-pointer"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-              <span>Clear Form</span>
-            </button>
 
             <button
               type="button"
@@ -1659,7 +1752,7 @@ export default function MarkEntryPanel({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-10 pb-4 text-center text-xs">
           <div>
             <div className="w-48 h-0.5 bg-slate-300 mx-auto mb-2" />
-            <p className="font-bold text-slate-800">Evaluator Name & Signature</p>
+            <p className="font-bold text-slate-800">Evaluator Signature</p>
             <p className="text-slate-500 font-medium">({meta.evaluatorName || 'Evaluator Signature'})</p>
           </div>
 

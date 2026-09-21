@@ -116,6 +116,7 @@ export default function App() {
               initialDepartment={activeDepartment}
               isLockedToBatch={isLockedToBatch}
               onNotifyAdminSubmission={handleNotifyAdminSubmission}
+              onBackToHome={handleLogout}
             />
           )}
 

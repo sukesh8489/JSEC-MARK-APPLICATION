@@ -230,20 +230,15 @@ export async function exportMarksheetToExcel(
   cellSem.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
   const cellFaculty = worksheet.getCell('E8');
-  const facultyRichText: any[] = [
-    { text: 'Faculty: ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
-    { text: `${meta.facultyInCharge || 'Faculty In-Charge'} `, font: { name: 'Arial', size: 9.5, color: { argb: slate900 } } },
-  ];
-  if (meta.evaluatorName) {
-    facultyRichText.push(
-      { text: '| Evaluator: ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
-      { text: meta.evaluatorName, font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate900 } } }
-    );
-  }
-  cellFaculty.value = { richText: facultyRichText };
+  cellFaculty.value = {
+    richText: [
+      { text: 'Faculty In-Charge:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
+      { text: meta.facultyInCharge || 'Faculty In-Charge', font: { name: 'Arial', size: 9.5, color: { argb: slate900 } } },
+    ],
+  };
   cellFaculty.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
-  // Row 9: Subject Code & Name + Max/Pass Marks
+  // Row 9: Subject Code & Name + Evaluator Name
   styleMetaRow(9, 22);
   worksheet.mergeCells('A9:D9');
   worksheet.mergeCells('E9:H9');
@@ -256,23 +251,43 @@ export async function exportMarksheetToExcel(
   };
   cellSubj.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
-  const cellMarksMeta = worksheet.getCell('E9');
+  const cellEval = worksheet.getCell('E9');
+  cellEval.value = {
+    richText: [
+      { text: 'Evaluator Name:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
+      { text: meta.evaluatorName || '-', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate900 } } },
+    ],
+  };
+  cellEval.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+
+  // Row 10: Marks Matrix & Assessment Type
+  styleMetaRow(10, 22);
+  worksheet.mergeCells('A10:D10');
+  worksheet.mergeCells('E10:H10');
+  const cellMarksMeta = worksheet.getCell('A10');
   cellMarksMeta.value = {
     richText: [
-      { text: 'Max Marks:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
-      { text: `${meta.maxMarks}    `, font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate900 } } },
-      { text: '|  Pass Mark:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
-      { text: `${meta.passMark}`, font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate900 } } },
+      { text: 'Marks Matrix:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
+      { text: `Max: ${meta.maxMarks}    |    Pass Mark: ${meta.passMark}`, font: { name: 'Arial', size: 9.5, color: { argb: slate900 } } },
     ],
   };
   cellMarksMeta.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
-  // Row 10: Spacing before table
-  worksheet.getRow(10).height = 10;
+  const cellExamType = worksheet.getCell('E10');
+  cellExamType.value = {
+    richText: [
+      { text: 'Assessment Type:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
+      { text: meta.examType, font: { name: 'Arial', size: 9.5, color: { argb: slate900 } } },
+    ],
+  };
+  cellExamType.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+
+  // Row 11: Spacing before table
+  worksheet.getRow(11).height = 10;
 
   // 4. STUDENT DETAILED MARKSHEET TABLE
-  // Table Header Row 11
-  const headerRow = worksheet.getRow(11);
+  // Table Header Row 12
+  const headerRow = worksheet.getRow(12);
   headerRow.height = 25;
   const headers = [
     'S.No',
@@ -294,8 +309,8 @@ export async function exportMarksheetToExcel(
     cell.border = thinBorder;
   });
 
-  // Student Data Rows (starting from Row 12)
-  let currentRowNum = 12;
+  // Student Data Rows (starting from Row 13)
+  let currentRowNum = 13;
   students.forEach((student, index) => {
     const row = worksheet.getRow(currentRowNum);
     row.height = 20;
@@ -399,8 +414,8 @@ export async function exportMarksheetToExcel(
     currentRowNum++;
   });
 
-  const startStudentRow = 12;
-  const endStudentRow = students.length > 0 ? currentRowNum - 1 : 12;
+  const startStudentRow = 13;
+  const endStudentRow = students.length > 0 ? currentRowNum - 1 : 13;
 
   // Add Excel Conditional Formatting for Column H (Result) so when marks change, colors adapt automatically
   if (students.length > 0) {
@@ -623,7 +638,7 @@ export async function exportMarksheetToExcel(
   worksheet.mergeCells(`G${currentRowNum}:H${currentRowNum}`);
 
   const cSigT1 = worksheet.getCell(`A${currentRowNum}`);
-  cSigT1.value = 'Evaluator Name & Signature';
+  cSigT1.value = 'Evaluator Signature';
   cSigT1.alignment = { horizontal: 'center', vertical: 'middle' };
   cSigT1.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } };
 

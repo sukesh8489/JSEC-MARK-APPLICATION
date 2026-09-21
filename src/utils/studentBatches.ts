@@ -17,10 +17,14 @@ export interface YearBatchConfig {
   defaultSubjectCode?: string;
   defaultSubjectName?: string;
   allowDelete: boolean;
+  isQrActive?: boolean; // true = Active (scan opens mark entry), false = Deactivated (scan blocked)
+  qrStatus?: 'ACTIVE' | 'DEACTIVATED';
+  qrActivatedAt?: string;
+  qrDeactivatedAt?: string;
   students: BatchStudent[];
 }
 
-export const DEPARTMENTS = [
+export const DEFAULT_DEPARTMENTS = [
   'AI&DS - Artificial Intelligence & Data Science',
   'CSE - Computer Science & Engineering',
   'CSE-CS - Computer Science & Engineering (Cyber Security)',
@@ -28,7 +32,132 @@ export const DEPARTMENTS = [
   'PHARMA - Pharmaceutical Technology',
   'BIO-TECH - Biotechnology',
   'BIO-MED - Biomedical Engineering',
-] as const;
+];
+
+export const DEPARTMENTS = DEFAULT_DEPARTMENTS;
+
+const DEPTS_STORAGE_KEY = 'jsec_custom_departments_v2';
+
+export function getStoredDepartments(): string[] {
+  if (typeof window === 'undefined') return [...DEFAULT_DEPARTMENTS];
+  try {
+    const raw = localStorage.getItem(DEPTS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const unique = new Set<string>(DEFAULT_DEPARTMENTS);
+        parsed.forEach((d) => {
+          if (typeof d === 'string' && d.trim()) {
+            unique.add(d.trim());
+          }
+        });
+        return Array.from(unique);
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading departments:', e);
+  }
+  return [...DEFAULT_DEPARTMENTS];
+}
+
+export function saveStoredDepartments(depts: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(DEPTS_STORAGE_KEY, JSON.stringify(depts));
+  } catch (e) {
+    console.warn('Error saving departments:', e);
+  }
+}
+
+export function addNewDepartment(
+  shortCode: string,
+  fullName: string
+): {
+  newDept: string;
+  updatedDepts: string[];
+  newBatches: YearBatchConfig[];
+} {
+  const cleanCode = shortCode.trim().toUpperCase();
+  const cleanName = fullName.trim();
+  const formattedDept = `${cleanCode} - ${cleanName}`;
+
+  const currentDepts = getStoredDepartments();
+  let updatedDepts = currentDepts;
+  if (!currentDepts.some((d) => d.toLowerCase() === formattedDept.toLowerCase())) {
+    updatedDepts = [...currentDepts, formattedDept];
+    saveStoredDepartments(updatedDepts);
+  }
+
+  // Generate 4 standard year batches for this new department
+  const baseId = cleanCode.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const newBatches: YearBatchConfig[] = [
+    {
+      id: `${baseId}_year1_sem1`,
+      yearNumber: 1,
+      yearLabel: '1st Year / 1st Sem Students',
+      semester: 'Semester 1',
+      yearCategory: '1ST_YEAR',
+      academicYear: '2024-2028',
+      department: formattedDept,
+      allowDelete: false,
+      isQrActive: true,
+      qrStatus: 'ACTIVE',
+      students: [],
+    },
+    {
+      id: `${baseId}_year2_sem3`,
+      yearNumber: 2,
+      yearLabel: '2nd Year / 3rd Sem Students',
+      semester: 'Semester 3',
+      yearCategory: 'HIGHER_SEM',
+      academicYear: '2023-2027',
+      department: formattedDept,
+      allowDelete: false,
+      isQrActive: true,
+      qrStatus: 'ACTIVE',
+      students: [],
+    },
+    {
+      id: `${baseId}_year3_sem5`,
+      yearNumber: 3,
+      yearLabel: '3rd Year / 5th Sem Students',
+      semester: 'Semester 5',
+      yearCategory: 'HIGHER_SEM',
+      academicYear: '2022-2026',
+      department: formattedDept,
+      allowDelete: false,
+      isQrActive: true,
+      qrStatus: 'ACTIVE',
+      students: [],
+    },
+    {
+      id: `${baseId}_year4_sem7`,
+      yearNumber: 4,
+      yearLabel: '4th Year / 7th Sem Students',
+      semester: 'Semester 7',
+      yearCategory: 'HIGHER_SEM',
+      academicYear: '2021-2025',
+      department: formattedDept,
+      allowDelete: true,
+      isQrActive: true,
+      qrStatus: 'ACTIVE',
+      students: [],
+    },
+  ];
+
+  // Append new batches to local storage if not already existing
+  const currentBatches = getStoredBatches();
+  const existingIds = new Set(currentBatches.map((b) => b.id));
+  const batchesToAdd = newBatches.filter((b) => !existingIds.has(b.id));
+  const allUpdated = [...currentBatches, ...batchesToAdd];
+  saveStoredBatches(allUpdated);
+
+  return {
+    newDept: formattedDept,
+    updatedDepts,
+    newBatches: batchesToAdd,
+  };
+}
 
 export const DEFAULT_BATCHES: YearBatchConfig[] = [
   // ==========================================
@@ -377,13 +506,32 @@ export function getStoredBatches(): YearBatchConfig[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const validDeptNames = new Set(DEPARTMENTS.map((d) => d.trim().toLowerCase()));
+        const validDeptList = getStoredDepartments();
+        const validDeptNames = new Set(validDeptList.map((d) => d.trim().toLowerCase()));
+
+        // Also if any parsed batch has a department, ensure it's in stored departments
+        let deptsUpdated = false;
+        parsed.forEach((b) => {
+          if (b.department && typeof b.department === 'string' && !validDeptNames.has(b.department.trim().toLowerCase())) {
+            validDeptList.push(b.department.trim());
+            validDeptNames.add(b.department.trim().toLowerCase());
+            deptsUpdated = true;
+          }
+        });
+        if (deptsUpdated) {
+          saveStoredDepartments(validDeptList);
+        }
+
         const sanitized = parsed
-          .filter((b) => b.department && validDeptNames.has(b.department.trim().toLowerCase()))
+          .filter((b) => b.department && (validDeptNames.has(b.department.trim().toLowerCase()) || b.department.trim().length > 0))
           .map((b) => {
             const copy = { ...b };
             delete copy.defaultSubjectCode;
             delete copy.defaultSubjectName;
+            if (copy.isQrActive === undefined) {
+              copy.isQrActive = true;
+              copy.qrStatus = 'ACTIVE';
+            }
             return copy;
           });
         const existingIds = new Set(sanitized.map((b) => b.id));
@@ -448,4 +596,25 @@ export function convertToMarkRecords(
     grade: 'RA',
     result: 'FAIL',
   }));
+}
+
+export function isBatchQrActive(batch?: YearBatchConfig | null): boolean {
+  if (!batch) return true;
+  return batch.isQrActive !== false && batch.qrStatus !== 'DEACTIVATED';
+}
+
+export function toggleBatchQrStatus(batchId: string, activate: boolean): YearBatchConfig[] {
+  const current = getStoredBatches();
+  const updated = current.map((b) => {
+    if (b.id !== batchId) return b;
+    return {
+      ...b,
+      isQrActive: activate,
+      qrStatus: activate ? ('ACTIVE' as const) : ('DEACTIVATED' as const),
+      qrActivatedAt: activate ? new Date().toISOString() : b.qrActivatedAt,
+      qrDeactivatedAt: !activate ? new Date().toISOString() : b.qrDeactivatedAt,
+    };
+  });
+  saveStoredBatches(updated);
+  return updated;
 }
