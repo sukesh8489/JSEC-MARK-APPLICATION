@@ -25,6 +25,9 @@ export default function App() {
     students: StudentMarkRecord[];
   } | null>(null);
 
+  // Track if MarkEntry was launched directly from inside Admin Panel
+  const [openedFromAdmin, setOpenedFromAdmin] = useState<boolean>(false);
+
   // Handle URL parameters for QR scan deep linking (e.g. ?role=staff&batch=aids_year1_sem1&dept=...&sem=Semester%201&qr=true)
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -65,6 +68,7 @@ export default function App() {
   const handleLogin = (role: UserRole) => {
     setCurrentUserRole(role);
     setIsLockedToBatch(false);
+    setOpenedFromAdmin(false);
   };
 
   const handleLogout = () => {
@@ -73,6 +77,7 @@ export default function App() {
     setActiveSemester(undefined);
     setActiveDepartment(undefined);
     setIsLockedToBatch(false);
+    setOpenedFromAdmin(false);
     if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
@@ -83,7 +88,19 @@ export default function App() {
     if (semester) setActiveSemester(semester);
     if (department) setActiveDepartment(department);
     setIsLockedToBatch(true);
+    setOpenedFromAdmin(true);
     setCurrentUserRole('MARK_ENTER');
+  };
+
+  // Navigation back handler
+  const handleNavBack = () => {
+    if (currentUserRole === 'MARK_ENTER' && openedFromAdmin) {
+      setCurrentUserRole('ADMIN');
+      setOpenedFromAdmin(false);
+      setIsLockedToBatch(false);
+    } else {
+      handleLogout();
+    }
   };
 
   const handleNotifyAdminSubmission = (
@@ -100,6 +117,7 @@ export default function App() {
         <Header
           currentUserRole={currentUserRole}
           onLogout={handleLogout}
+          onBack={currentUserRole ? handleNavBack : undefined}
         />
 
         {/* Main View Body */}
@@ -116,7 +134,7 @@ export default function App() {
               initialDepartment={activeDepartment}
               isLockedToBatch={isLockedToBatch}
               onNotifyAdminSubmission={handleNotifyAdminSubmission}
-              onBackToHome={handleLogout}
+              onBackToHome={handleNavBack}
             />
           )}
 
@@ -124,6 +142,7 @@ export default function App() {
             <AdminPanel
               onOpenMarkEntry={handleOpenMarkEntryFromAdmin}
               latestSubmittedSheet={latestSubmission}
+              onBack={handleNavBack}
             />
           )}
         </main>

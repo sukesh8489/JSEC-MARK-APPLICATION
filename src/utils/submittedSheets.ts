@@ -2,8 +2,9 @@ import * as XLSX from 'xlsx';
 import { AssessmentMeta, StudentMarkRecord, EvaluationMetrics } from '../types';
 import { computeMetrics, initialSampleStudents } from './gradeCalculator';
 import { exportMarksheetToExcel } from './excelExport';
+import { exportMarksheetToWord } from './wordExport';
 
-export { exportMarksheetToExcel };
+export { exportMarksheetToExcel, exportMarksheetToWord };
 
 export interface SubmittedSheetRecord {
   id: string;
@@ -84,15 +85,16 @@ export function deleteMarksheetsBySubject(subjectCode: string): SubmittedSheetRe
   return updated;
 }
 
-// Check if a marksheet matching subjectCode, subjectName, and examType has already been submitted
+// Check if a marksheet matching subjectCode, subjectName, examType, and assessmentDate has already been submitted
 export function findDuplicateSubmittedSheet(
-  target: { subjectCode?: string; subjectName?: string; examType?: string; department?: string; semester?: string },
+  target: { subjectCode?: string; subjectName?: string; examType?: string; assessmentDate?: string; department?: string; semester?: string },
   sheetsList?: SubmittedSheetRecord[]
 ): SubmittedSheetRecord | undefined {
   const sheets = sheetsList || getStoredSubmittedSheets();
   const code = (target.subjectCode || '').trim().toUpperCase();
   const name = (target.subjectName || '').trim().toUpperCase();
   const exam = (target.examType || '').trim().toUpperCase();
+  const date = (target.assessmentDate || '').trim();
 
   if (!code || !name || !exam) return undefined;
 
@@ -103,10 +105,12 @@ export function findDuplicateSubmittedSheet(
     const sCode = (s.meta.subjectCode || '').trim().toUpperCase();
     const sName = (s.meta.subjectName || '').trim().toUpperCase();
     const sExam = (s.meta.examType || '').trim().toUpperCase();
+    const sDate = (s.meta.assessmentDate || '').trim();
 
     const codeMatch = sCode === code;
     const nameMatch = sName === name;
     const examMatch = normalizeExam(sExam) === normalizeExam(exam);
+    const dateMatch = !date || !sDate || date === sDate;
 
     const deptMatch =
       !target.department ||
@@ -115,7 +119,7 @@ export function findDuplicateSubmittedSheet(
       !target.semester ||
       s.meta.semester?.trim().toLowerCase() === target.semester.trim().toLowerCase();
 
-    return codeMatch && nameMatch && examMatch && deptMatch && semMatch;
+    return codeMatch && nameMatch && examMatch && dateMatch && deptMatch && semMatch;
   });
 }
 
@@ -124,12 +128,13 @@ export function addSubmittedMarksheet(meta: AssessmentMeta, students: StudentMar
   const currentSheets = getStoredSubmittedSheets();
   const yearNumber = getYearFromSemester(meta.semester);
 
-  // Check if sheet for this subject, subject name, exam type, and semester already exists
+  // Check if sheet for this subject, subject name, exam type, assessment date, and semester already exists
   const existingIdx = currentSheets.findIndex(
     (s) =>
       s.meta.subjectCode.trim().toUpperCase() === meta.subjectCode.trim().toUpperCase() &&
       s.meta.subjectName?.trim().toUpperCase() === meta.subjectName?.trim().toUpperCase() &&
       (s.meta.examType || '').trim().toUpperCase() === (meta.examType || '').trim().toUpperCase() &&
+      (!meta.assessmentDate || !s.meta.assessmentDate || s.meta.assessmentDate.trim() === meta.assessmentDate.trim()) &&
       s.meta.semester === meta.semester &&
       s.meta.department === meta.department
   );
@@ -182,7 +187,7 @@ export function exportMarksheetToXLS(
         ["St. Mary's Nagar, Thiruninravur, Chennai - 602024, Tamil Nadu"],
         [`CONTINUOUS ASSESSMENT MARKSHEET — ${meta.examType.toUpperCase()}`],
         [],
-        ['Department:', meta.department, '', 'Academic Year:', meta.academicYear],
+        ['Department:', meta.department, '', 'BATCH:', meta.academicYear],
         ['Semester:', meta.semester, '', 'Assessment Type:', meta.examType],
         ['Subject Code:', meta.subjectCode, '', 'Subject Name:', meta.subjectName],
         ['Faculty In-Charge:', meta.facultyInCharge || 'N/A', '', 'Assessment Date:', meta.assessmentDate],
@@ -190,8 +195,8 @@ export function exportMarksheetToXLS(
         ['Max Marks:', meta.maxMarks, '', 'Pass Mark:', meta.passMark],
         [],
         ['EVALUATION SUMMARY & PERFORMANCE METRICS'],
-        ['No of student Present:', metrics.presentCount, 'No of student Pass:', metrics.passCount],
-        ['No of student Absent:', metrics.absentCount, 'no of student Fail:', metrics.failCount],
+        ['No of Student Present:', metrics.presentCount, 'No of Student Pass:', metrics.passCount],
+        ['No of Student Absent:', metrics.absentCount, 'No of Student Fail:', metrics.failCount],
         [`Pass percentage: ${metrics.passPercentage.toFixed(2)}%`],
         [],
         ['STUDENT DETAILED MARKSHEET'],

@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { AssessmentMeta, StudentMarkRecord } from '../types';
-import { computeMetrics } from '../utils/gradeCalculator';
+import { AssessmentMeta, StudentMarkRecord, AttendanceStatus } from '../types';
+import { computeMetrics, calculateGradeAndResult } from '../utils/gradeCalculator';
 import {
   SubmittedSheetRecord,
   getStoredSubmittedSheets,
   saveStoredSubmittedSheets,
   exportMarksheetToXLS,
+  exportMarksheetToWord,
   getYearFromSemester,
 } from '../utils/submittedSheets';
 import { exportMarksheetToPDF } from '../utils/pdfExport';
@@ -16,6 +17,7 @@ import {
   updateMarksheetApprovalInFirestore,
   deleteMarksheetFromFirestore,
   deleteAllMarksheetsFromFirestore,
+  saveMarksheetToFirestore,
 } from '../services/firestoreService';
 import DownloadPrintModal from './DownloadPrintModal';
 import StudentDetailsAdmin from './StudentDetailsAdmin';
@@ -39,19 +41,23 @@ import {
   Sparkles,
   AlertCircle,
   ArrowRight,
+  ArrowLeft,
   FileText,
   Trash2,
   X,
+  Edit3,
 } from 'lucide-react';
 
 interface AdminPanelProps {
   onOpenMarkEntry: (batchId?: string, semester?: string, department?: string) => void;
   latestSubmittedSheet?: { meta: AssessmentMeta; students: StudentMarkRecord[] } | null;
+  onBack?: () => void;
 }
 
 export default function AdminPanel({
   onOpenMarkEntry,
   latestSubmittedSheet,
+  onBack,
 }: AdminPanelProps) {
   // Navigation between Submitted Marksheets and Student Details (defaults to Student Details & QR)
   const [adminSection, setAdminSection] = useState<'STUDENTS' | 'MARKSHEETS'>('STUDENTS');
@@ -242,11 +248,99 @@ export default function AdminPanel({
 
     try {
       await updateMarksheetLockInFirestore(id, nextUnlocked);
-      showToast(nextUnlocked ? 'Portal unlocked in live cloud database' : 'Portal locked in live cloud database');
+      showToast(
+        nextUnlocked
+          ? '🔓 Portal Unlocked! Marks editing is ENABLED for Admin and Staff.'
+          : '🔒 Portal Locked! Marks are now PROTECTED and cannot be changed.'
+      );
     } catch (err) {
       console.warn('Live Firestore update notice:', err);
-      showToast('Portal Lock status updated locally');
+      showToast(
+        nextUnlocked
+          ? '🔓 Portal Unlocked locally (Editing enabled)'
+          : '🔒 Portal Locked locally (Marks protected)'
+      );
     }
+  };
+
+  // Admin inline student mark editing (only allowed when activeSheet.meta.isUnlocked === true)
+  const handleAdminMarkChange = (studentId: string, value: string) => {
+    if (!activeSheet) return;
+    if (!activeSheet.meta.isUnlocked) {
+      showToast('⚠️ Portal is locked! Click "Portal Unlocked" above to edit marks.');
+      return;
+    }
+
+    const maxM = activeSheet.meta.maxMarks;
+    const passM = activeSheet.meta.passMark;
+
+    const updatedStudents = activeSheet.students.map((s) => {
+      if (s.id !== studentId) return s;
+
+      if (value === '') {
+        const { grade, result } = calculateGradeAndResult(s.attendance, '', maxM, passM);
+        return { ...s, marksObtained: '', grade, result };
+      }
+
+      const num = Math.min(maxM, Math.max(0, Number(value)));
+      const { grade, result } = calculateGradeAndResult(s.attendance, num, maxM, passM);
+      return { ...s, marksObtained: num, grade, result };
+    });
+
+    const updatedSheet: SubmittedSheetRecord = {
+      ...activeSheet,
+      students: updatedStudents,
+    };
+
+    const updatedAllSheets = sheets.map((s) => (s.id === activeSheet.id ? updatedSheet : s));
+    setSheets(updatedAllSheets);
+    saveStoredSubmittedSheets(updatedAllSheets);
+
+    // Sync to live Firestore
+    saveMarksheetToFirestore(updatedSheet).catch((err) => {
+      console.warn('Live Firestore save notice:', err);
+    });
+  };
+
+  // Admin inline student attendance toggle (only allowed when activeSheet.meta.isUnlocked === true)
+  const handleAdminAttendanceChange = (studentId: string, attendance: AttendanceStatus) => {
+    if (!activeSheet) return;
+    if (!activeSheet.meta.isUnlocked) {
+      showToast('⚠️ Portal is locked! Click "Portal Unlocked" above to edit attendance.');
+      return;
+    }
+
+    const maxM = activeSheet.meta.maxMarks;
+    const passM = activeSheet.meta.passMark;
+
+    const updatedStudents = activeSheet.students.map((s) => {
+      if (s.id !== studentId) return s;
+
+      const marks = attendance === 'ABSENT' ? '' : typeof s.marksObtained === 'number' ? s.marksObtained : 0;
+      const { grade, result } = calculateGradeAndResult(attendance, marks, maxM, passM);
+      return { ...s, attendance, marksObtained: marks, grade, result };
+    });
+
+    const updatedSheet: SubmittedSheetRecord = {
+      ...activeSheet,
+      students: updatedStudents,
+    };
+
+    const updatedAllSheets = sheets.map((s) => (s.id === activeSheet.id ? updatedSheet : s));
+    setSheets(updatedAllSheets);
+    saveStoredSubmittedSheets(updatedAllSheets);
+
+    // Sync to live Firestore
+    saveMarksheetToFirestore(updatedSheet).catch((err) => {
+      console.warn('Live Firestore attendance sync notice:', err);
+    });
+  };
+
+  // Direct Word Download for Admin
+  const handleAdminDownloadWord = async (sheet: SubmittedSheetRecord) => {
+    const metrics = computeMetrics(sheet.students, sheet.meta.passMark);
+    await exportMarksheetToWord(sheet.meta, sheet.students, metrics);
+    showToast(`Downloaded ${sheet.meta.subjectCode} Marksheet as Word (.docx)`);
   };
 
   // Approve sheet - permanently approved in live database & local storage
@@ -377,28 +471,46 @@ export default function AdminPanel({
         </div>
       )}
 
-      {/* Primary Section Switcher Tabs */}
-      <div className="flex items-center bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+      {/* Primary Section Switcher Tabs with Navigation Back Arrow on Left */}
+      <div className="flex items-center gap-2.5">
         <button
           type="button"
-          id="btn-admin-tab-marksheets"
-          onClick={() => setAdminSection('MARKSHEETS')}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
-            adminSection === 'MARKSHEETS'
-              ? 'bg-[#0f284e] text-white shadow-md ring-2 ring-blue-900/20'
-              : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-          }`}
+          id="btn-admin-nav-back"
+          onClick={() => {
+            if (onBack) {
+              onBack();
+            } else if (typeof window !== 'undefined') {
+              window.history.back();
+            }
+          }}
+          className="flex items-center gap-1.5 py-3 px-3.5 sm:px-4 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 rounded-2xl border border-slate-200/90 shadow-2xs text-xs sm:text-sm font-bold transition cursor-pointer shrink-0"
+          title="Go Back"
         >
-          <Building2 className="w-4 h-4" />
-          <span>View Submitted Marksheets</span>
-          <span
-            className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+          <ArrowLeft className="w-4 h-4 text-slate-700" />
+          <span>Back</span>
+        </button>
+
+        <div className="flex-1 flex items-center bg-white p-1.5 rounded-2xl border border-slate-200/90 shadow-2xs">
+          <button
+            type="button"
+            id="btn-admin-tab-marksheets"
+            onClick={() => setAdminSection('MARKSHEETS')}
+            className={`flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer ${
               adminSection === 'MARKSHEETS'
-                ? 'bg-amber-400 text-slate-950'
-                : 'bg-slate-200 text-slate-700'
+                ? 'bg-[#0f284e] text-white shadow-md ring-2 ring-blue-900/20'
+                : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
             }`}
           >
-            {sheets.length} Sheets
+            <Building2 className="w-4 h-4" />
+            <span>View Submitted Marksheets</span>
+            <span
+              className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                adminSection === 'MARKSHEETS'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'bg-slate-200 text-slate-700'
+              }`}
+            >
+              {sheets.length} Sheets
           </span>
         </button>
 
@@ -418,6 +530,7 @@ export default function AdminPanel({
             All Depts &amp; Years
           </span>
         </button>
+        </div>
       </div>
 
       {/* Render selected section */}
@@ -623,6 +736,18 @@ export default function AdminPanel({
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-200">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Navigation Back to Marksheets List button */}
+                    <button
+                      type="button"
+                      id="btn-admin-back-to-list"
+                      onClick={() => setSelectedSubject('')}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer border border-slate-300 mr-1 shadow-2xs"
+                      title="Back to all marksheets and filters"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5 text-slate-600" />
+                      <span>Back</span>
+                    </button>
+
                     <span className="bg-[#0f284e] text-white text-xs font-mono font-bold px-2.5 py-1 rounded-md">
                       {activeSheet.meta.subjectCode}
                     </span>
@@ -649,7 +774,7 @@ export default function AdminPanel({
                       {activeSheet.meta.examType}
                     </span>
                     <span>•</span>
-                    <span>{activeSheet.meta.academicYear}</span>
+                    <span className="font-bold text-slate-800">BATCH: <span className="text-blue-900">{activeSheet.meta.academicYear}</span></span>
                     <span>•</span>
                     <span>Faculty: <strong className="text-slate-800">{activeSheet.meta.facultyInCharge || 'Faculty In-Charge'}</strong></span>
                     {activeSheet.meta.evaluatorName && (
@@ -663,7 +788,7 @@ export default function AdminPanel({
                   </div>
                 </div>
 
-                {/* ADMIN DOWNLOAD OPTIONS (PDF & XLS) */}
+                {/* ADMIN DOWNLOAD OPTIONS (PDF, XLS & WORD) */}
                 <div className="flex flex-wrap items-center gap-2 self-start lg:self-center shrink-0">
                   {/* Download PDF button */}
                   <button
@@ -686,7 +811,19 @@ export default function AdminPanel({
                     title="Download Marksheet as Excel Spreadsheet (.xlsx)"
                   >
                     <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
-                    <span>Download as XLS (.xlsx)</span>
+                    <span>Download as XLS</span>
+                  </button>
+
+                  {/* Download Word button */}
+                  <button
+                    type="button"
+                    id="btn-admin-download-word"
+                    onClick={() => handleAdminDownloadWord(activeSheet)}
+                    className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-700 hover:bg-blue-600 text-white rounded-xl text-xs font-bold shadow-xs transition cursor-pointer border border-blue-800"
+                    title="Download Marksheet as Word Document (.doc)"
+                  >
+                    <FileText className="w-4 h-4 text-blue-200" />
+                    <span>Download as Word (.doc)</span>
                   </button>
 
                   {/* Preview / Print Modal */}
@@ -725,24 +862,30 @@ export default function AdminPanel({
                     </button>
                   )}
 
-                  {/* Lock / Unlock Toggle */}
+                  {/* Lock / Unlock Toggle Button: if Unlocked means edit marks; if Locked means cant change marks */}
                   <button
                     type="button"
+                    id="btn-admin-toggle-portal-lock"
                     onClick={() => toggleUnlockStatus(activeSheet.id)}
-                    className={`flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer border shadow-2xs ${
                       activeSheet.meta.isUnlocked
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-700 ring-2 ring-emerald-400/40'
                         : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
                     }`}
+                    title={
+                      activeSheet.meta.isUnlocked
+                        ? 'Portal is currently Unlocked (You can edit marks). Click to Lock Portal and freeze marks.'
+                        : 'Portal is currently Locked (Cannot change marks). Click to Unlock Portal and edit marks.'
+                    }
                   >
                     {activeSheet.meta.isUnlocked ? (
                       <>
-                        <Unlock className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Portal Unlocked</span>
+                        <Unlock className="w-4 h-4 text-white" />
+                        <span>Portal Unlocked (Edit Marks ON)</span>
                       </>
                     ) : (
                       <>
-                        <Lock className="w-3.5 h-3.5 text-slate-500" />
+                        <Lock className="w-4 h-4 text-slate-500" />
                         <span>Portal Locked</span>
                       </>
                     )}
@@ -761,6 +904,23 @@ export default function AdminPanel({
                   </button>
                 </div>
               </div>
+
+              {/* Portal Lock Status Banner for Admin and Staff (when editing is unlocked) */}
+              {activeSheet.meta.isUnlocked && (
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs text-emerald-900 animate-in fade-in">
+                  <div className="flex items-center gap-2.5 font-medium">
+                    <span className="p-1 bg-emerald-600 text-white rounded-md">
+                      <Unlock className="w-4 h-4" />
+                    </span>
+                    <span>
+                      <strong>Portal Unlocked:</strong> Marks editing is <span className="underline font-bold">ENABLED</span> for both Staff and Admin. You can modify marks and attendance in the table below. Click <strong>Portal Locked</strong> above to freeze marks.
+                    </span>
+                  </div>
+                  <span className="bg-emerald-200/90 text-emerald-950 font-extrabold text-[11px] px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 self-start sm:self-auto">
+                    Editing Enabled
+                  </span>
+                </div>
+              )}
 
               {/* Student Marksheet Table */}
               <div className="rounded-xl overflow-hidden border border-slate-200 shadow-2xs">
@@ -795,24 +955,64 @@ export default function AdminPanel({
                           <td className="py-2 px-3 font-mono font-bold text-slate-900">{student.regNo}</td>
                           <td className="py-2 px-3 font-semibold text-slate-800">{student.name}</td>
                           <td className="py-2 px-3 text-center">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold ${
-                                student.attendance === 'PRESENT'
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : 'bg-red-100 text-red-800'
-                              }`}
-                            >
-                              {student.attendance}
-                            </span>
+                            {activeSheet.meta.isUnlocked ? (
+                              <select
+                                value={student.attendance}
+                                onChange={(e) =>
+                                  handleAdminAttendanceChange(
+                                    student.id,
+                                    e.target.value as AttendanceStatus
+                                  )
+                                }
+                                className={`text-[11px] font-bold px-2 py-1 rounded-md border focus:outline-hidden cursor-pointer ${
+                                  student.attendance === 'PRESENT'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                    : 'bg-red-50 text-red-800 border-red-300'
+                                }`}
+                              >
+                                <option value="PRESENT">PRESENT</option>
+                                <option value="ABSENT">ABSENT</option>
+                              </select>
+                            ) : (
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-extrabold ${
+                                  student.attendance === 'PRESENT'
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-red-100 text-red-800'
+                                }`}
+                              >
+                                {student.attendance}
+                              </span>
+                            )}
                           </td>
                           <td className="py-2 px-3 text-center font-semibold text-slate-600">
                             {student.maxMarks}
                           </td>
-                          <td className="py-2 px-3 text-center font-mono font-bold text-slate-900">
-                            {student.marksObtained === '' ? (
-                              <span className="text-red-600 font-bold">AB</span>
+                          <td className="py-2 px-3 text-center">
+                            {activeSheet.meta.isUnlocked ? (
+                              student.attendance === 'ABSENT' ? (
+                                <span className="text-red-600 font-bold bg-rose-50 px-2 py-1 rounded border border-rose-200 inline-block font-mono text-xs">
+                                  AB
+                                </span>
+                              ) : (
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={activeSheet.meta.maxMarks}
+                                  value={student.marksObtained}
+                                  onChange={(e) => handleAdminMarkChange(student.id, e.target.value)}
+                                  className="w-16 px-2 py-1 border border-blue-400 bg-blue-50/60 rounded-md text-center font-mono font-bold text-slate-900 focus:ring-2 focus:ring-blue-700 focus:bg-white text-xs"
+                                  placeholder="0"
+                                />
+                              )
                             ) : (
-                              student.marksObtained
+                              <span className="font-mono font-bold text-slate-900">
+                                {student.marksObtained === '' ? (
+                                  <span className="text-red-600 font-bold">AB</span>
+                                ) : (
+                                  student.marksObtained
+                                )}
+                              </span>
                             )}
                           </td>
                           <td className="py-2 px-3 text-center">
@@ -866,21 +1066,21 @@ export default function AdminPanel({
                   <div className="grid grid-cols-2 gap-x-12 gap-y-3 py-4 text-xs font-bold text-slate-800 max-w-2xl">
                     {/* Row 1 */}
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-700">No of student Present:</span>
+                      <span className="text-slate-700">No of Student Present:</span>
                       <span className="text-emerald-600 font-black text-sm">{activeMetrics.presentCount}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-700">No of student Pass:</span>
+                      <span className="text-slate-700">No of Student Pass:</span>
                       <span className="text-emerald-600 font-black text-sm">{activeMetrics.passCount}</span>
                     </div>
 
                     {/* Row 2 */}
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-700">No of student Absent:</span>
+                      <span className="text-slate-700">No of Student Absent:</span>
                       <span className="text-slate-900 font-black text-sm">{activeMetrics.absentCount}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-700">no of student Fail:</span>
+                      <span className="text-slate-700">No of Student Fail:</span>
                       <span className="text-slate-900 font-black text-sm">{activeMetrics.failCount}</span>
                     </div>
                   </div>

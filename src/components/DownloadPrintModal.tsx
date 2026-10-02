@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { StudentMarkRecord, AssessmentMeta, EvaluationMetrics } from '../types';
 import CollegeLogo from './CollegeLogo';
 import { NAAC_LOGO_BASE64 } from '../assets/naacLogoBase64';
-import { X, Printer, FileSpreadsheet, Download, CheckCircle2 } from 'lucide-react';
-import { exportMarksheetToXLS } from '../utils/submittedSheets';
+import { X, Printer, FileSpreadsheet, Download, CheckCircle2, FileText } from 'lucide-react';
+import { exportMarksheetToXLS, exportMarksheetToWord } from '../utils/submittedSheets';
 import { exportMarksheetToPDF } from '../utils/pdfExport';
 
 interface DownloadPrintModalProps {
@@ -63,6 +63,16 @@ export default function DownloadPrintModal({
     setTimeout(() => setDownloadNotice(null), 4000);
   };
 
+  const handleExportWord = async () => {
+    try {
+      await exportMarksheetToWord(meta, students, metrics);
+      setDownloadNotice('Downloaded marksheet Word (.docx) document');
+      setTimeout(() => setDownloadNotice(null), 4000);
+    } catch (err) {
+      console.error('Word export error:', err);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-2 sm:p-4 overflow-y-auto">
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
@@ -87,6 +97,18 @@ export default function DownloadPrintModal({
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
               <span>Download XLS (.xlsx)</span>
+            </button>
+
+            {/* Download as Word */}
+            <button
+              type="button"
+              id="btn-modal-export-word"
+              onClick={handleExportWord}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-lg text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Download formatted Word (.docx) document"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-200" />
+              <span>Download Word (.docx)</span>
             </button>
 
             {/* Primary: Direct Download as PDF */}
@@ -162,13 +184,13 @@ export default function DownloadPrintModal({
               </div>
               <div
                 className="relative flex items-center justify-center shrink-0 select-none overflow-hidden"
-                style={{ width: 72, height: 50 }}
+                style={{ width: 75, height: 60 }}
               >
                 <img
                   src={NAAC_LOGO_BASE64}
                   alt="NAAC Accredited Grade A"
-                  width={72}
-                  height={50}
+                  width={75}
+                  height={60}
                   className="w-full h-full object-contain"
                   referrerPolicy="no-referrer"
                 />
@@ -200,7 +222,7 @@ export default function DownloadPrintModal({
               <span className="font-bold text-slate-900">{meta.semester}</span>
             </div>
             <div>
-              <span className="text-slate-500 font-medium">Academic Year: </span>
+              <span className="text-slate-500 font-medium">BATCH: </span>
               <span className="font-bold text-slate-900">{meta.academicYear}</span>
             </div>
             <div>
@@ -328,21 +350,21 @@ export default function DownloadPrintModal({
             <div className="grid grid-cols-2 gap-x-12 gap-y-3 py-4 text-xs font-bold text-slate-800 max-w-2xl">
               {/* Row 1 */}
               <div className="flex items-center justify-between">
-                <span className="text-slate-700">No of student Present:</span>
+                <span className="text-slate-700">No of Student Present:</span>
                 <span className="text-emerald-600 font-black text-sm">{metrics.presentCount}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-700">No of student Pass:</span>
+                <span className="text-slate-700">No of Student Pass:</span>
                 <span className="text-emerald-600 font-black text-sm">{metrics.passCount}</span>
               </div>
 
               {/* Row 2 */}
               <div className="flex items-center justify-between">
-                <span className="text-slate-700">No of student Absent:</span>
+                <span className="text-slate-700">No of Student Absent:</span>
                 <span className="text-slate-900 font-black text-sm">{metrics.absentCount}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-700">no of student Fail:</span>
+                <span className="text-slate-700">No of Student Fail:</span>
                 <span className="text-slate-900 font-black text-sm">{metrics.failCount}</span>
               </div>
             </div>
@@ -354,25 +376,28 @@ export default function DownloadPrintModal({
           </div>
 
           {/* Official 3-Column Signatures Section: 1. Evaluator Name & Sign, 2. Exam Cell Coordinator, 3. Principal Sign */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-4 text-center text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 pt-6 pb-2 text-center text-xs">
             <div>
-              <div className="w-36 sm:w-44 h-0.5 bg-slate-400 mx-auto mb-2" />
-              <p className="font-semibold text-slate-700">Evaluator Signature</p>
+              <div className="h-10 sm:h-12" />
+              <div className="text-slate-400 font-bold tracking-tighter mb-1 select-none font-mono">____________________________</div>
+              <p className="font-bold text-slate-800">Evaluator Signature</p>
               {meta.evaluatorName && (
-                <p className="text-slate-500 font-bold text-[11px]">({meta.evaluatorName})</p>
+                <p className="text-slate-500 font-medium text-[11px]">({meta.evaluatorName})</p>
               )}
             </div>
             <div>
-              <div className="w-36 sm:w-44 h-0.5 bg-slate-400 mx-auto mb-2" />
-              <p className="font-semibold text-slate-700">Exam Cell Coordinator</p>
-              <p className="text-slate-500 font-bold text-[11px]">
+              <div className="h-10 sm:h-12" />
+              <div className="text-slate-400 font-bold tracking-tighter mb-1 select-none font-mono">____________________________</div>
+              <p className="font-bold text-slate-800">Exam Cell Coordinator</p>
+              <p className="text-slate-500 font-medium text-[11px]">
                 {meta.examCellCoordinator ? `(${meta.examCellCoordinator})` : '(Central Exam Cell)'}
               </p>
             </div>
             <div>
-              <div className="w-36 sm:w-44 h-0.5 bg-slate-400 mx-auto mb-2" />
-              <p className="font-semibold text-slate-700">Principal Signature</p>
-              <p className="text-slate-500 font-bold text-[11px]">
+              <div className="h-10 sm:h-12" />
+              <div className="text-slate-400 font-bold tracking-tighter mb-1 select-none font-mono">____________________________</div>
+              <p className="font-bold text-slate-800">Principal Signature</p>
+              <p className="text-slate-500 font-medium text-[11px]">
                 {meta.principalName
                   ? `(${meta.principalName})`
                   : meta.principalSignature

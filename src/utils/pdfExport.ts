@@ -23,11 +23,11 @@ function renderVectorHeaderFallback(
     console.warn('Could not render college logo in PDF:', imgErr);
   }
 
-  // Official NAAC Accreditation Medal Logo (Right side of college name)
+  // Official NAAC Accreditation A Grade Insignia Logo (Right side of college name)
   try {
     if (NAAC_LOGO_BASE64) {
       const naacFormat = NAAC_LOGO_BASE64.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG';
-      doc.addImage(NAAC_LOGO_BASE64, naacFormat, pageWidth - 13 - 23, 8.5, 23, 17);
+      doc.addImage(NAAC_LOGO_BASE64, naacFormat, pageWidth - 13 - 22, 7.5, 22, 17.6);
     }
   } catch (imgErr) {
     console.warn('Could not render NAAC accreditation logo in PDF:', imgErr);
@@ -161,7 +161,7 @@ export async function exportMarksheetToPDF(
   doc.text('Semester:', col1X, currentY);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(15, 23, 42);
-  doc.text(`${meta.semester} (${meta.academicYear})`, col1X + 22, currentY);
+  doc.text(`${meta.semester}   (BATCH: ${meta.academicYear || '-'})`, col1X + 22, currentY);
 
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(71, 85, 105);
@@ -321,27 +321,27 @@ export async function exportMarksheetToPDF(
 
   doc.setFontSize(8);
 
-  // Left column - Row 1: "No of student Present:"
+  // Left column - Row 1: "No of Student Present:"
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(30, 41, 59);
-  doc.text('No of student Present:', leftColLabelX, row1Y);
+  doc.text('No of Student Present:', leftColLabelX, row1Y);
   doc.setTextColor(16, 149, 93); // Green
   doc.text(metrics.presentCount.toString(), leftColValX, row1Y);
 
-  // Left column - Row 2: "No of student Absent:"
+  // Left column - Row 2: "No of Student Absent:"
   doc.setTextColor(30, 41, 59);
-  doc.text('No of student Absent:', leftColLabelX, row2Y);
+  doc.text('No of Student Absent:', leftColLabelX, row2Y);
   doc.text(metrics.absentCount.toString(), leftColValX, row2Y);
 
-  // Right column - Row 1: "No of student Pass:"
+  // Right column - Row 1: "No of Student Pass:"
   doc.setTextColor(30, 41, 59);
-  doc.text('No of student Pass:', rightColLabelX, row1Y);
+  doc.text('No of Student Pass:', rightColLabelX, row1Y);
   doc.setTextColor(16, 149, 93); // Green
   doc.text(metrics.passCount.toString(), rightColValX, row1Y);
 
-  // Right column - Row 2: "no of student Fail:"
+  // Right column - Row 2: "No of Student Fail:"
   doc.setTextColor(30, 41, 59);
-  doc.text('no of student Fail:', rightColLabelX, row2Y);
+  doc.text('No of Student Fail:', rightColLabelX, row2Y);
   doc.text(metrics.failCount.toString(), rightColValX, row2Y);
 
   // Centered Pass percentage banner pill

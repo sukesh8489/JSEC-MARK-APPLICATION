@@ -156,7 +156,7 @@ export default function MarkEntryPanel({
     { key: 'department', label: 'Department' },
     { key: 'semester', label: 'Semester' },
     { key: 'examType', label: 'Exam Type' },
-    { key: 'academicYear', label: 'Academic Year' },
+    { key: 'academicYear', label: 'Batch' },
     { key: 'facultyInCharge', label: 'Faculty In-Charge' },
     { key: 'evaluatorName', label: 'Evaluator Name' },
     { key: 'assessmentDate', label: 'Assessment Date' },
@@ -184,56 +184,93 @@ export default function MarkEntryPanel({
 
   const isHeaderComplete = missingHeaderFields.length === 0;
 
-  // Duplicate Check: Check if subject code, subject name, and exam type already submitted
-  const duplicateSubmittedSheet = useMemo(() => {
-    // If sheet is unlocked by Admin specifically for editing, allow faculty to proceed
-    if (meta.isUnlocked && meta.status === 'Unlocked for Editing') {
-      return null;
-    }
-
+  // Duplicate Check: Check if subject code, subject name, exam type, and assessment date match an already submitted sheet
+  const matchingSubmittedSheet = useMemo(() => {
     const code = (meta.subjectCode || '').trim().toUpperCase();
     const name = (meta.subjectName || '').trim().toUpperCase();
     const exam = (meta.examType || '').trim().toUpperCase();
+    const date = (meta.assessmentDate || '').trim();
 
     if (!code || !name || !exam) return null;
 
     const normalizeExam = (e: string) =>
       e.toUpperCase().replace(/\s+/g, '').replace(/^M-/, 'MODEL-');
 
-    return submittedSheets.find((s) => {
-      const sCode = (s.meta.subjectCode || '').trim().toUpperCase();
-      const sName = (s.meta.subjectName || '').trim().toUpperCase();
-      const sExam = (s.meta.examType || '').trim().toUpperCase();
+    return (
+      submittedSheets.find((s) => {
+        const sCode = (s.meta.subjectCode || '').trim().toUpperCase();
+        const sName = (s.meta.subjectName || '').trim().toUpperCase();
+        const sExam = (s.meta.examType || '').trim().toUpperCase();
+        const sDate = (s.meta.assessmentDate || '').trim();
 
-      const isCodeMatch = sCode === code;
-      const isNameMatch = sName === name;
-      const isExamMatch = normalizeExam(sExam) === normalizeExam(exam);
+        const isCodeMatch = sCode === code;
+        const isNameMatch = sName === name;
+        const isExamMatch = normalizeExam(sExam) === normalizeExam(exam);
+        const isDateMatch = !date || !sDate || date === sDate;
 
-      // Department and semester check if applicable
-      const sDept = (s.meta.department || '').trim().toLowerCase();
-      const curDept = (meta.department || '').trim().toLowerCase();
-      const isDeptMatch = !curDept || !sDept || sDept === curDept;
+        // Department and semester check if applicable
+        const sDept = (s.meta.department || '').trim().toLowerCase();
+        const curDept = (meta.department || '').trim().toLowerCase();
+        const isDeptMatch = !curDept || !sDept || sDept === curDept;
 
-      const sSem = (s.meta.semester || '').trim().toLowerCase();
-      const curSem = (meta.semester || '').trim().toLowerCase();
-      const isSemMatch = !curSem || !sSem || sSem === curSem;
+        const sSem = (s.meta.semester || '').trim().toLowerCase();
+        const curSem = (meta.semester || '').trim().toLowerCase();
+        const isSemMatch = !curSem || !sSem || sSem === curSem;
 
-      return isCodeMatch && isNameMatch && isExamMatch && isDeptMatch && isSemMatch;
-    }) || null;
+        return isCodeMatch && isNameMatch && isExamMatch && isDateMatch && isDeptMatch && isSemMatch;
+      }) || null
+    );
   }, [
     meta.subjectCode,
     meta.subjectName,
     meta.examType,
+    meta.assessmentDate,
     meta.department,
     meta.semester,
-    meta.isUnlocked,
-    meta.status,
     submittedSheets,
   ]);
 
-  // Is marksheet locked due to duplicate submission or submitted status
-  const isDuplicateLocked = Boolean(duplicateSubmittedSheet);
-  const isEntryDisabled = isDuplicateLocked || meta.status === 'Submitted (Locked)';
+  // Is matching sheet unlocked by Admin?
+  const isSheetUnlockedByAdmin = matchingSubmittedSheet
+    ? Boolean(matchingSubmittedSheet.meta.isUnlocked)
+    : false;
+
+  // Duplicate locked if an existing submitted sheet matches all 4 details AND it is NOT unlocked by Admin
+  const isDuplicateLocked = Boolean(matchingSubmittedSheet && !isSheetUnlockedByAdmin);
+
+  // Is mark entry disabled: only disabled if duplicate locked, OR if currently submitted and not unlocked by admin
+  const isEntryDisabled = isDuplicateLocked || (meta.status === 'Submitted (Locked)' && !isSheetUnlockedByAdmin);
+
+  // Backward compatibility alias for modal & button checks
+  const duplicateSubmittedSheet = isDuplicateLocked ? matchingSubmittedSheet : null;
+
+  // Sync existing marks when a submitted marksheet is unlocked by admin
+  useEffect(() => {
+    if (matchingSubmittedSheet && isSheetUnlockedByAdmin && matchingSubmittedSheet.students.length > 0) {
+      setStudents(matchingSubmittedSheet.students);
+    }
+  }, [matchingSubmittedSheet?.id, isSheetUnlockedByAdmin]);
+
+  // Allow clearing marks and starting fresh for a new subject on the same page without refresh
+  const handleStartNewSubject = () => {
+    setMeta((prev) => ({
+      ...prev,
+      subjectCode: '',
+      subjectName: '',
+      status: 'Draft (Editable)',
+      isUnlocked: true,
+    }));
+    setStudents((prev) =>
+      prev.map((s) => ({
+        ...s,
+        marksObtained: '',
+        attendance: 'PRESENT' as const,
+        grade: 'U' as const,
+        result: 'FAIL' as const,
+      }))
+    );
+    showToast('Ready for new subject! Roster preserved, enter new Subject Code & Name.');
+  };
 
   // Students list state initialized with registered batch students
   const [students, setStudents] = useState<StudentMarkRecord[]>(() => {
@@ -873,6 +910,21 @@ export default function MarkEntryPanel({
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-6 border-b border-slate-100">
           <div>
             <div className="flex flex-wrap items-center gap-3">
+              {/* Navigation Back Arrow */}
+              <button
+                type="button"
+                id="btn-mark-entry-back"
+                onClick={() => {
+                  if (onBackToHome) onBackToHome();
+                  else window.history.back();
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition cursor-pointer border border-slate-300 shadow-2xs mr-1"
+                title="Go Back"
+              >
+                <ArrowLeft className="w-4 h-4 text-slate-700" />
+                <span>Back</span>
+              </button>
+
               <span className="bg-blue-50 text-blue-800 text-xs font-bold px-3 py-1 rounded-full border border-blue-200">
                 Panel 1
               </span>
@@ -1072,7 +1124,15 @@ export default function MarkEntryPanel({
               <select
                 id="select-exam-type"
                 value={meta.examType}
-                onChange={(e) => setMeta({ ...meta, examType: e.target.value })}
+                onChange={(e) => {
+                  const ex = e.target.value;
+                  setMeta((prev) => ({
+                    ...prev,
+                    examType: ex,
+                    status: prev.status === 'Submitted (Locked)' ? 'Draft (Editable)' : prev.status,
+                    isUnlocked: prev.status === 'Submitted (Locked)' ? true : prev.isUnlocked,
+                  }));
+                }}
                 className="w-full px-3.5 py-2.5 bg-slate-50/70 border border-slate-300 rounded-xl text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-blue-800 focus:outline-hidden cursor-pointer"
               >
                 <option value="CAT-1">CAT-1</option>
@@ -1085,18 +1145,26 @@ export default function MarkEntryPanel({
               </select>
             </div>
 
-            {/* Academic Year */}
+            {/* Batch (formerly Academic Year) */}
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wide">
-                  ACADEMIC YEAR <span className="text-red-500">*</span>
+                  BATCH: <span className="text-red-500">*</span>
                 </label>
               </div>
               <input
                 id="input-academic-year"
                 type="text"
                 value={meta.academicYear}
-                onChange={(e) => setMeta({ ...meta, academicYear: e.target.value })}
+                onChange={(e) => {
+                  const yr = e.target.value;
+                  setMeta((prev) => ({
+                    ...prev,
+                    academicYear: yr,
+                    status: prev.status === 'Submitted (Locked)' ? 'Draft (Editable)' : prev.status,
+                    isUnlocked: prev.status === 'Submitted (Locked)' ? true : prev.isUnlocked,
+                  }));
+                }}
                 placeholder="e.g. 2024-2028 or 2025-2026"
                 className="w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold text-slate-800 bg-slate-50/70 border-slate-300 focus:ring-2 focus:ring-blue-800 focus:outline-hidden"
               />
@@ -1159,7 +1227,15 @@ export default function MarkEntryPanel({
                 id="input-assessment-date"
                 type="text"
                 value={meta.assessmentDate}
-                onChange={(e) => setMeta({ ...meta, assessmentDate: e.target.value })}
+                onChange={(e) => {
+                  const dt = e.target.value;
+                  setMeta((prev) => ({
+                    ...prev,
+                    assessmentDate: dt,
+                    status: prev.status === 'Submitted (Locked)' ? 'Draft (Editable)' : prev.status,
+                    isUnlocked: prev.status === 'Submitted (Locked)' ? true : prev.isUnlocked,
+                  }));
+                }}
                 className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-800 focus:outline-hidden ${
                   !meta.assessmentDate?.trim()
                     ? 'bg-amber-50/40 border-amber-300'
@@ -1182,7 +1258,15 @@ export default function MarkEntryPanel({
                 type="text"
                 placeholder="e.g. CS3351 *"
                 value={meta.subjectCode}
-                onChange={(e) => setMeta({ ...meta, subjectCode: e.target.value })}
+                onChange={(e) => {
+                  const code = e.target.value;
+                  setMeta((prev) => ({
+                    ...prev,
+                    subjectCode: code,
+                    status: prev.status === 'Submitted (Locked)' ? 'Draft (Editable)' : prev.status,
+                    isUnlocked: prev.status === 'Submitted (Locked)' ? true : prev.isUnlocked,
+                  }));
+                }}
                 className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-800 focus:outline-hidden font-mono uppercase ${
                   !meta.subjectCode?.trim()
                     ? 'bg-amber-50/40 border-amber-300 placeholder:text-amber-500'
@@ -1205,7 +1289,15 @@ export default function MarkEntryPanel({
                 type="text"
                 placeholder="e.g. DIGITAL PRINCIPLES *"
                 value={meta.subjectName}
-                onChange={(e) => setMeta({ ...meta, subjectName: e.target.value })}
+                onChange={(e) => {
+                  const name = e.target.value;
+                  setMeta((prev) => ({
+                    ...prev,
+                    subjectName: name,
+                    status: prev.status === 'Submitted (Locked)' ? 'Draft (Editable)' : prev.status,
+                    isUnlocked: prev.status === 'Submitted (Locked)' ? true : prev.isUnlocked,
+                  }));
+                }}
                 className={`w-full px-3.5 py-2.5 border rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-800 focus:outline-hidden uppercase ${
                   !meta.subjectName?.trim()
                     ? 'bg-amber-50/40 border-amber-300 placeholder:text-amber-500'
@@ -1410,7 +1502,7 @@ export default function MarkEntryPanel({
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
           {/* Present */}
           <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3.5">
-            <div className="text-[11px] font-medium text-slate-600">No of student Present:</div>
+            <div className="text-[11px] font-medium text-slate-600">No of Student Present:</div>
             <div className="text-2xl font-black text-slate-900 mt-1">
               {metrics.presentCount}
             </div>
@@ -1418,7 +1510,7 @@ export default function MarkEntryPanel({
 
           {/* Absent */}
           <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3.5">
-            <div className="text-[11px] font-medium text-slate-600">No of student Absent:</div>
+            <div className="text-[11px] font-medium text-slate-600">No of Student Absent:</div>
             <div className="text-2xl font-black text-slate-900 mt-1">
               {metrics.absentCount}
             </div>
@@ -1426,7 +1518,7 @@ export default function MarkEntryPanel({
 
           {/* Pass */}
           <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3.5">
-            <div className="text-[11px] font-medium text-slate-600">No of student Pass:</div>
+            <div className="text-[11px] font-medium text-slate-600">No of Student Pass:</div>
             <div className="text-2xl font-black text-emerald-700 mt-1">
               {metrics.passCount}
             </div>
@@ -1434,7 +1526,7 @@ export default function MarkEntryPanel({
 
           {/* Fail */}
           <div className="bg-slate-50/80 border border-slate-200/80 rounded-xl p-3.5">
-            <div className="text-[11px] font-medium text-slate-600">No of student Fail:</div>
+            <div className="text-[11px] font-medium text-slate-600">No of Student Fail:</div>
             <div className="text-2xl font-black text-slate-900 mt-1">
               {metrics.failCount}
             </div>
@@ -1460,13 +1552,37 @@ export default function MarkEntryPanel({
             <span className="font-bold text-slate-900 text-sm sm:text-base">
               Marksheet Table: {students.length} Students
             </span>
-            <span className="text-xs bg-slate-100 text-slate-600 font-medium px-2.5 py-0.5 rounded-full border border-slate-200">
-              {meta.status}
+            <span
+              className={`text-xs font-semibold px-2.5 py-0.5 rounded-full border ${
+                isSheetUnlockedByAdmin
+                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300 font-bold'
+                  : isDuplicateLocked
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 font-bold'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}
+            >
+              {isSheetUnlockedByAdmin
+                ? 'Unlocked for Editing'
+                : isDuplicateLocked
+                ? 'Submitted (Locked)'
+                : meta.status}
             </span>
           </div>
 
           {/* Action buttons */}
           <div className="flex flex-wrap items-center gap-2">
+            {/* New Subject Mark Entry Button */}
+            <button
+              type="button"
+              id="btn-new-subject-entry"
+              onClick={handleStartNewSubject}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 shadow-2xs cursor-pointer"
+              title="Enter marks for another subject on the same page"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-blue-700" />
+              <span>+ New Subject Entry</span>
+            </button>
+
             <button
               type="button"
               id="btn-submit-marks"
@@ -1474,7 +1590,7 @@ export default function MarkEntryPanel({
               disabled={!isHeaderComplete || isDuplicateLocked}
               title={
                 isDuplicateLocked
-                  ? `Already entered the marks for this subject (${meta.subjectCode} - ${meta.subjectName}, ${meta.examType})`
+                  ? `Already entered the marks for this subject (${meta.subjectCode} - ${meta.subjectName}, ${meta.examType}). Contact Admin to unlock portal.`
                   : !isHeaderComplete
                   ? `Cannot submit: Complete details above first (${missingHeaderFields.map((f) => f.label).join(', ')})`
                   : 'Submit official Marksheet to Admin'
@@ -1484,6 +1600,8 @@ export default function MarkEntryPanel({
                   ? 'bg-amber-100 text-amber-900 border border-amber-300 cursor-not-allowed opacity-90'
                   : !isHeaderComplete
                   ? 'bg-slate-200 text-slate-500 border border-slate-300 cursor-not-allowed opacity-75'
+                  : isSheetUnlockedByAdmin
+                  ? 'bg-emerald-700 hover:bg-emerald-600 text-white cursor-pointer'
                   : 'bg-[#0f284e] hover:bg-blue-900 text-white cursor-pointer'
               }`}
             >
@@ -1497,6 +1615,11 @@ export default function MarkEntryPanel({
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
                   <span>Submit Marks ({missingHeaderFields.length} Details Needed)</span>
                 </>
+              ) : isSheetUnlockedByAdmin ? (
+                <>
+                  <Send className="w-3.5 h-3.5" />
+                  <span>Update Marks (Unlocked)</span>
+                </>
               ) : (
                 <>
                   <Send className="w-3.5 h-3.5" />
@@ -1505,7 +1628,6 @@ export default function MarkEntryPanel({
               )}
             </button>
 
-
             <button
               type="button"
               id="btn-download-option"
@@ -1513,7 +1635,7 @@ export default function MarkEntryPanel({
               disabled={meta.status !== 'Submitted (Locked)' && !duplicateSubmittedSheet}
               title={
                 meta.status === 'Submitted (Locked)' || duplicateSubmittedSheet
-                  ? 'Download official Marksheet (PDF & XLS)'
+                  ? 'Download official Marksheet (PDF, XLS & Word)'
                   : 'Download disabled. Please click "Submit Marks" to enable downloads.'
               }
               className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition ${
@@ -1523,7 +1645,7 @@ export default function MarkEntryPanel({
               }`}
             >
               <Download className="w-3.5 h-3.5" />
-              <span>DOWNLOAD OPTION (PDF &amp; XLS)</span>
+              <span>DOWNLOAD OPTION (PDF, XLS &amp; WORD)</span>
               {meta.status === 'Submitted (Locked)' || duplicateSubmittedSheet ? (
                 <Unlock className="w-3.5 h-3.5 text-emerald-900" />
               ) : (

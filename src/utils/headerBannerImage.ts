@@ -80,11 +80,11 @@ export async function generateHeaderBannerBase64(examType: string): Promise<stri
           ctx.drawImage(collegeImg, logoX, logoY, logoSize, logoSize);
         }
 
-        // 3. Right NAAC Accreditation Medal Logo
-        const naacWidth = 124;
-        const naacHeight = 90;
+        // 3. Right NAAC Accreditation Medal Logo (A Grade Insignia)
+        const naacWidth = 118;
+        const naacHeight = 94;
         const naacX = logicalWidth - 32 - naacWidth;
-        const naacY = 16;
+        const naacY = 14;
 
         if (naacImg) {
           ctx.drawImage(naacImg, naacX, naacY, naacWidth, naacHeight);

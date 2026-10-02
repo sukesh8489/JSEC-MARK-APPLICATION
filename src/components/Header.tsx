@@ -5,6 +5,7 @@ import { LogOut } from 'lucide-react';
 interface HeaderProps {
   currentUserRole: UserRole | null;
   onLogout: () => void;
+  onBack?: () => void;
 }
 
 export default function Header({
@@ -15,7 +16,7 @@ export default function Header({
     <header className="bg-[#0b1e36] text-white border-b border-slate-800/80 sticky top-0 z-40 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Left Branding */}
-        <div className="flex items-center gap-3.5">
+        <div className="flex items-center gap-3">
           <CollegeLogo size={42} />
           <div className="leading-tight">
             <h1 className="text-base sm:text-lg font-black tracking-wide text-white uppercase font-sans">

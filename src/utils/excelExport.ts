@@ -163,8 +163,8 @@ export async function exportMarksheetToExcel(
           extension: naacExt,
         });
         worksheet.addImage(naacImageId, {
-          tl: { col: 6.8, row: 0.15 },
-          ext: { width: 96, height: 66 },
+          tl: { col: 6.85, row: 0.15 },
+          ext: { width: 85, height: 68 },
         });
       }
     } catch (err) {
@@ -216,7 +216,7 @@ export async function exportMarksheetToExcel(
   };
   cellDate.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
-  // Row 8: Semester & Faculty In-Charge
+  // Row 8: Semester & Faculty In-Charge (with BATCH)
   styleMetaRow(8, 22);
   worksheet.mergeCells('A8:D8');
   worksheet.mergeCells('E8:H8');
@@ -224,7 +224,7 @@ export async function exportMarksheetToExcel(
   cellSem.value = {
     richText: [
       { text: 'Semester:  ', font: { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } } },
-      { text: `${meta.semester} (${meta.academicYear})`, font: { name: 'Arial', size: 9.5, color: { argb: slate900 } } },
+      { text: `${meta.semester}    |    BATCH: ${meta.academicYear || '-'}`, font: { name: 'Arial', size: 9.5, color: { argb: slate900 } } },
     ],
   };
   cellSem.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
@@ -486,7 +486,7 @@ export async function exportMarksheetToExcel(
   worksheet.mergeCells(`E${currentRowNum}:G${currentRowNum}`);
 
   const presLabelCell = worksheet.getCell(`A${currentRowNum}`);
-  presLabelCell.value = 'No of student Present:';
+  presLabelCell.value = 'No of Student Present:';
   presLabelCell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } };
   presLabelCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
   presLabelCell.fill = metaFill;
@@ -504,7 +504,7 @@ export async function exportMarksheetToExcel(
   cellPres.fill = metaFill;
 
   const passLabelCell = worksheet.getCell(`E${currentRowNum}`);
-  passLabelCell.value = 'No of student Pass:';
+  passLabelCell.value = 'No of Student Pass:';
   passLabelCell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } };
   passLabelCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
   passLabelCell.fill = metaFill;
@@ -533,7 +533,7 @@ export async function exportMarksheetToExcel(
   worksheet.mergeCells(`E${currentRowNum}:G${currentRowNum}`);
 
   const absLabelCell = worksheet.getCell(`A${currentRowNum}`);
-  absLabelCell.value = 'No of student Absent:';
+  absLabelCell.value = 'No of Student Absent:';
   absLabelCell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } };
   absLabelCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
   absLabelCell.fill = metaFill;
@@ -551,7 +551,7 @@ export async function exportMarksheetToExcel(
   cellAbs.fill = metaFill;
 
   const failLabelCell = worksheet.getCell(`E${currentRowNum}`);
-  failLabelCell.value = 'no of student Fail:';
+  failLabelCell.value = 'No of Student Fail:';
   failLabelCell.font = { name: 'Arial', size: 9.5, bold: true, color: { argb: slate700 } };
   failLabelCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
   failLabelCell.fill = metaFill;
